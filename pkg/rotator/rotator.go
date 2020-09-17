@@ -498,14 +498,14 @@ func addController(mgr manager.Manager, r *ReconcileWH) error {
 	// Create a new controller
 	err := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Secret{}).
-			Watches(&source.Kind{Type: vwh}, &handler.EnqueueRequestsFromMapFunc{ToRequests: &mapper{
-				secretKey: r.secretKey,
-				vwhKey:    r.vwhKey,
-			}}).
-			Watches(&source.Kind{Type: crd}, &handler.EnqueueRequestsFromMapFunc{ToRequests: &crdMapper{
-				secretKey: r.secretKey,
-				crdNames:  r.crdNames,
-			}}).Complete(r)
+		Watches(&source.Kind{Type: vwh}, &handler.EnqueueRequestsFromMapFunc{ToRequests: &mapper{
+			secretKey: r.secretKey,
+			vwhKey:    r.vwhKey,
+		}}).
+		Watches(&source.Kind{Type: crd}, &handler.EnqueueRequestsFromMapFunc{ToRequests: &crdMapper{
+			secretKey: r.secretKey,
+			crdNames:  r.crdNames,
+		}}).Complete(r)
 	if err != nil {
 		return err
 	}
@@ -627,7 +627,7 @@ func (r *ReconcileWH) ensureCRDConvWHCerts(certPem []byte) error {
 			continue
 		}
 		if err := r.client.Update(r.ctx, crd); err != nil {
-			crLog.Error(err, "unable to update cert on CRD " + crdName)
+			crLog.Error(err, "unable to update cert on CRD "+crdName)
 			anyError = err
 		}
 	}
