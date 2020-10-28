@@ -41,6 +41,7 @@ const (
 	caKeyName              = "ca.key"
 	rotationCheckFrequency = 12 * time.Hour
 	certValidityDuration   = 10 * 365 * 24 * time.Hour
+	lookaheadInterval      = 90 * 24 * time.Hour
 )
 
 var crLog = logf.Log.WithName("cert-rotation")
@@ -209,9 +210,12 @@ func (cr *CertRotator) refreshCertIfNeeded() error {
 
 func (cr *CertRotator) refreshCerts(refreshCA bool, secret *corev1.Secret) error {
 	var caArtifacts *KeyPairArtifacts
+	now := time.Now()
+	begin := now.Add(-1 * time.Hour)
+	end := now.Add(certValidityDuration)
 	if refreshCA {
 		var err error
-		caArtifacts, err = cr.createCACert()
+		caArtifacts, err = cr.CreateCACert(begin, end)
 		if err != nil {
 			return err
 		}
@@ -222,7 +226,7 @@ func (cr *CertRotator) refreshCerts(refreshCA bool, secret *corev1.Secret) error
 			return err
 		}
 	}
-	cert, key, err := cr.createCertPEM(caArtifacts)
+	cert, key, err := cr.CreateCertPEM(caArtifacts, begin, end)
 	if err != nil {
 		return err
 	}
@@ -339,12 +343,9 @@ func buildArtifactsFromSecret(secret *corev1.Secret) (*KeyPairArtifacts, error) 
 	}, nil
 }
 
-// createCACert creates the self-signed CA cert and private key that will
+// CreateCACert creates the self-signed CA cert and private key that will
 // be used to sign the server certificate
-func (cr *CertRotator) createCACert() (*KeyPairArtifacts, error) {
-	now := time.Now()
-	begin := now.Add(-1 * time.Hour)
-	end := now.Add(certValidityDuration)
+func (cr *CertRotator) CreateCACert(begin, end time.Time) (*KeyPairArtifacts, error) {
 	templ := &x509.Certificate{
 		SerialNumber: big.NewInt(0),
 		Subject: pkix.Name{
@@ -380,12 +381,9 @@ func (cr *CertRotator) createCACert() (*KeyPairArtifacts, error) {
 	return &KeyPairArtifacts{Cert: cert, Key: key, CertPEM: certPEM, KeyPEM: keyPEM}, nil
 }
 
-// createCertPEM takes the results of createCACert and uses it to create the
+// CreateCertPEM takes the results of CreateCACert and uses it to create the
 // PEM-encoded public certificate and private key, respectively
-func (cr *CertRotator) createCertPEM(ca *KeyPairArtifacts) ([]byte, []byte, error) {
-	now := time.Now()
-	begin := now.Add(-1 * time.Hour)
-	end := now.Add(certValidityDuration)
+func (cr *CertRotator) CreateCertPEM(ca *KeyPairArtifacts, begin, end time.Time) ([]byte, []byte, error) {
 	templ := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
@@ -429,11 +427,11 @@ func pemEncode(certificateDER []byte, key *rsa.PrivateKey) ([]byte, []byte, erro
 }
 
 func lookaheadTime() time.Time {
-	return time.Now().Add(90 * 24 * time.Hour)
+	return time.Now().Add(lookaheadInterval)
 }
 
 func (cr *CertRotator) validServerCert(caCert, cert, key []byte) bool {
-	valid, err := validCert(caCert, cert, key, cr.DNSName, lookaheadTime())
+	valid, err := ValidCert(caCert, cert, key, cr.DNSName, lookaheadTime())
 	if err != nil {
 		return false
 	}
@@ -441,14 +439,14 @@ func (cr *CertRotator) validServerCert(caCert, cert, key []byte) bool {
 }
 
 func (cr *CertRotator) validCACert(cert, key []byte) bool {
-	valid, err := validCert(cert, cert, key, cr.CAName, lookaheadTime())
+	valid, err := ValidCert(cert, cert, key, cr.CAName, lookaheadTime())
 	if err != nil {
 		return false
 	}
 	return valid
 }
 
-func validCert(caCert, cert, key []byte, dnsName string, at time.Time) (bool, error) {
+func ValidCert(caCert, cert, key []byte, dnsName string, at time.Time) (bool, error) {
 	if len(caCert) == 0 || len(cert) == 0 || len(key) == 0 {
 		return false, errors.New("empty cert")
 	}
