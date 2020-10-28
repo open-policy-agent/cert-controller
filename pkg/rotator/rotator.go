@@ -41,7 +41,7 @@ const (
 	caKeyName              = "ca.key"
 	rotationCheckFrequency = 12 * time.Hour
 	certValidityDuration   = 10 * 365 * 24 * time.Hour
-	lookaheadDuration      = 90 * 24 * time.Hour
+	lookaheadInterval      = 90 * 24 * time.Hour
 )
 
 var crLog = logf.Log.WithName("cert-rotation")
@@ -427,7 +427,7 @@ func pemEncode(certificateDER []byte, key *rsa.PrivateKey) ([]byte, []byte, erro
 }
 
 func lookaheadTime() time.Time {
-	return time.Now().Add(lookaheadDuration)
+	return time.Now().Add(lookaheadInterval)
 }
 
 func (cr *CertRotator) validServerCert(caCert, cert, key []byte) bool {
