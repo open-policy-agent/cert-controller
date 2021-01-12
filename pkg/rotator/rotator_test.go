@@ -219,7 +219,7 @@ func TestReconcile(t *testing.T) {
 	err = c.Create(ctx, wh)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating webhookConfig")
 
-	stop, wg := StartTestManager(mgr, g)
+	ctx, cancelFunc, wg := StartTestManager(mgr, g)
 
 	// Wait for certificates to generated
 	ensureCertWasGenerated(ctx, g, c, key)
@@ -232,8 +232,7 @@ func TestReconcile(t *testing.T) {
 
 	// Verify certificates are regenerated
 	ensureWebhookPopulated(ctx, g, c, wh)
-
-	close(stop)
+	cancelFunc()
 	wg.Wait()
 }
 
@@ -260,7 +259,7 @@ func TestNamespacedCache(t *testing.T) {
 		createSecret(ctx, g, c, key)
 	}
 
-	stop, wg := StartTestManager(mgr, g)
+	stop, cancelFunc, wg := StartTestManager(mgr, g)
 
 	// The reader (cache) will be initialized in AddRotator.
 	g.Expect(rotator.reader).ToNot(gomega.BeNil())
@@ -278,7 +277,7 @@ func TestNamespacedCache(t *testing.T) {
 	g.Expect(lst.Items[0].Namespace).To(gomega.Equal(key.Namespace), "verifying secret namespace")
 	g.Expect(lst.Items[0].Name).To(gomega.Equal(key.Name), "verifying secret name")
 
-	close(stop)
+	cancelFunc()
 	wg.Wait()
 }
 
