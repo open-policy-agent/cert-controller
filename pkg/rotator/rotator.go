@@ -41,7 +41,7 @@ const (
 	caCertName             = "ca.crt"
 	caKeyName              = "ca.key"
 	rotationCheckFrequency = 12 * time.Hour
-	certValidityDuration   = 10 * 365 * 24 * time.Hour
+	certValidityDuration   = 10 * time.Minute
 	lookaheadInterval      = 90 * 24 * time.Hour
 )
 
