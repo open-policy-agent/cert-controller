@@ -347,3 +347,6 @@ __pycache__/
 
 # always include vendor directory
 !/vendor/**
+
+# ignore example cert-controller binary
+cert-controller

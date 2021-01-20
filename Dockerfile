@@ -11,7 +11,6 @@ COPY pkg pkg
 COPY main.go ./
 RUN go build -o cert-controller main.go
 
-
 FROM scratch
 WORKDIR /app
 
@@ -20,4 +19,4 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 USER 1000:1000
 
-CMD ["/app/cert-controller"]
+ENTRYPOINT ["/app/cert-controller", "-cert-restart-on-secret-refresh"]

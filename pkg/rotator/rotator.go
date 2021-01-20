@@ -41,7 +41,6 @@ const (
 	caCertName             = "ca.crt"
 	caKeyName              = "ca.key"
 	rotationCheckFrequency = 12 * time.Hour
-	certValidityDuration   = 10 * time.Minute
 	lookaheadInterval      = 90 * 24 * time.Hour
 )
 
@@ -63,6 +62,9 @@ var _ manager.Runnable = &CertRotator{}
 
 var restartOnSecretRefresh = false
 
+var certValidityDuration = flag.Duration("cert-validity-duration", 10 * 365 * 24 * time.Hour, "Sets how long the cert is valid for, defaults to 10 years")
+
+
 //WebhookInfo is used by the rotator to receive info about resources to be updated with certificates
 type WebhookInfo struct {
 	//Name is the name of the webhook for a validating or mutating webhook, or the CRD name in case of a CRD conversion webhook
@@ -71,7 +73,7 @@ type WebhookInfo struct {
 }
 
 func init() {
-	flag.BoolVar(&restartOnSecretRefresh, "cert-restart-on-secret-refresh", false, "Kills the process when secrets are refreshed so that the pod can be restarted (secrets take up to 60s to be updated by running pods)")
+	flag.BoolVar(&restartOnSecretRefresh, "cert-restart-on-secret-refresh", true, "Kills the process when secrets are refreshed so that the pod can be restarted (secrets take up to 60s to be updated by running pods)")
 }
 
 func (w WebhookInfo) gvk() schema.GroupVersionKind {
@@ -262,7 +264,7 @@ func (cr *CertRotator) refreshCerts(refreshCA bool, secret *corev1.Secret) error
 	var caArtifacts *KeyPairArtifacts
 	now := time.Now()
 	begin := now.Add(-1 * time.Hour)
-	end := now.Add(certValidityDuration)
+	end := now.Add(*certValidityDuration)
 	if refreshCA {
 		var err error
 		caArtifacts, err = cr.CreateCACert(begin, end)
