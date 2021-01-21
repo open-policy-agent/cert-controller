@@ -70,7 +70,7 @@ fully bootstrapped into local storage. This can be used to delay the
 registration of webhooks until a certificate is available to be loaded. This
 prevents any crashing of the webhook pod during startup.
 
-Users who set the `--cert-restart-on-secret-refresh` flag will have the Pod
+Users who set the `RestartOnSecretRefresh` field on the `CertRotator` struct will have the Pod
 restart when the cert refreshes or is initialized. This may improve mean
 time to availability of a bootstrapping webhook.
 
