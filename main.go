@@ -1,23 +1,21 @@
 package main
 
 import (
-	"go.uber.org/zap"
 	"flag"
+	"github.com/open-policy-agent/cert-controller/pkg/rotator"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd/api"
 	"os"
-	"github.com/open-policy-agent/cert-controller/pkg/rotator"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	ctrl "sigs.k8s.io/controller-runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"time"
 )
 
-// TODO: make all defaults "" and map loop to blow up when value is ""
-// TODO: call flag parse to maybe fix arguments
 var (
 	certDir        = flag.String("cert-dir", "", "The directory where certs are stored")
 	caName         = flag.String("ca-name", "", "The name of the ca cert")
@@ -29,16 +27,15 @@ var (
 	webhookName    = flag.String("webhook-name", "", "Your webhook name")
 )
 
-
-var webhooks = []rotator.WebhookInfo{
-	{
-		Name: *webhookName,
-		Type: rotator.Mutating, // Todo: allow selecting types
-	},
-}
-
 func main() {
 	flag.Parse()
+
+	var webhooks = []rotator.WebhookInfo{
+		{
+			Name: *webhookName,
+			Type: rotator.Mutating, // Todo: allow selecting types
+		},
+	}
 
 	// configure logging.
 	logger, _ := zap.NewDevelopment()

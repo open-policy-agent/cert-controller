@@ -627,9 +627,11 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 		}
 
 		// Ensure certs on webhooks
+		fmt.Println("Starting cert injection")
 		if err := r.ensureCerts(artifacts.CertPEM); err != nil {
 			return reconcile.Result{}, err
 		}
+		fmt.Println("Finished cert injection")
 
 		// Set CAInjected if the reconciler has not exited early.
 		r.wasCAInjected.Store(true)
@@ -658,25 +660,32 @@ func (r *ReconcileWH) ensureCerts(certPem []byte) error {
 		updatedResource.SetGroupVersionKind(gvk)
 		if err := r.cache.Get(r.ctx, types.NamespacedName{Name: webhook.Name}, updatedResource); err != nil {
 			if k8sErrors.IsNotFound(err) {
+				fmt.Println("Webhook not found. Unable to update certificate.", err)
 				log.Error(err, "Webhook not found. Unable to update certificate.")
 				continue
 			}
 			anyError = err
 			log.Error(err, "Error getting webhook for certificate update.")
+			fmt.Println("Error getting webhook for certificate update.", err)
+
 			continue
 		}
 		if !updatedResource.GetDeletionTimestamp().IsZero() {
+			fmt.Println("Webhook is being deleted. Unable to update certificate")
 			log.Info("Webhook is being deleted. Unable to update certificate")
 			continue
 		}
 
 		log.Info("Ensuring CA cert", "name", webhook.Name, "gvk", gvk)
 		if err := injectCert(updatedResource, certPem, webhook.Type); err != nil {
+			fmt.Println("Unable to inject cert to webhook.:", err)
 			log.Error(err, "Unable to inject cert to webhook.")
 			anyError = err
 			continue
 		}
 		if err := r.writer.Update(r.ctx, updatedResource); err != nil {
+			fmt.Println("Error updating webhook with certificate:", err)
+
 			log.Error(err, "Error updating webhook with certificate")
 			anyError = err
 			continue

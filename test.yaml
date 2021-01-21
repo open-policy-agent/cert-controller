@@ -27,14 +27,14 @@ spec:
           readOnly: true
       - name: cert-controller
         args:
-          - cert-dir=/certs
-          - ca-name=foocaname
-          - secret-name=vpa-admission-controller-secret
-          - service-name=fooservice
-          - ca-organization=fooorg
-          - namespace=default
-          - dns-name=foo.bar.svc
-          - webhook-name=vpa-webhook-config
+          - -cert-dir=/certs
+          - -ca-name=foocaname
+          - -secret-name=vpa-admission-controller-secret
+          - -service-name=fooservice
+          - -ca-organization=fooorg
+          - -namespace=default
+          - -dns-name=foo.bar.svc
+          - -webhook-name=vpa-webhook-config
         imagePullPolicy: Never
         image: cert-controller
       volumes:
@@ -63,6 +63,7 @@ webhooks:
     operations:  ["CREATE"]
     resources:   ["pods"]
   clientConfig:
+    caBundle: Cg==
     service:
       namespace: default
       name: vpa-webhook
@@ -83,3 +84,5 @@ metadata:
   namespace: default
   annotations:
     samson/server_side_apply: 'true'
+
+# TODO: add clusterrole, clusterrolebinding, serviceaccount to read and update secrets and webhooks
