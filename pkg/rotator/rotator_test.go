@@ -179,7 +179,8 @@ func TestReconcile(t *testing.T) {
 	const secretName = "test-secret"
 	const whName = "test-webhook"
 
-	ctx := context.Background()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
 	g := gomega.NewWithT(t)
 	mgr := setupManager(g)
 	c := mgr.GetClient()
@@ -219,7 +220,7 @@ func TestReconcile(t *testing.T) {
 	err = c.Create(ctx, wh)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating webhookConfig")
 
-	ctx, cancelFunc, wg := StartTestManager(mgr, g)
+	wg := StartTestManager(ctx, mgr, g)
 
 	// Wait for certificates to generated
 	ensureCertWasGenerated(ctx, g, c, key)
@@ -232,13 +233,13 @@ func TestReconcile(t *testing.T) {
 
 	// Verify certificates are regenerated
 	ensureWebhookPopulated(ctx, g, c, wh)
-	cancelFunc()
 	wg.Wait()
 }
 
 // Verifies that the rotator cache only reads from a single namespace.
 func TestNamespacedCache(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
 	g := gomega.NewWithT(t)
 	mgr := setupManager(g)
 	c := mgr.GetClient()
@@ -259,13 +260,13 @@ func TestNamespacedCache(t *testing.T) {
 		createSecret(ctx, g, c, key)
 	}
 
-	stop, cancelFunc, wg := StartTestManager(mgr, g)
+	wg := StartTestManager(ctx, mgr, g)
 
 	// The reader (cache) will be initialized in AddRotator.
 	g.Expect(rotator.reader).ToNot(gomega.BeNil())
 
 	// Wait for it to populate
-	if !rotator.reader.WaitForCacheSync(stop) {
+	if !rotator.reader.WaitForCacheSync(ctx) {
 		t.Fatal("waiting for cache to populate")
 	}
 
@@ -277,7 +278,6 @@ func TestNamespacedCache(t *testing.T) {
 	g.Expect(lst.Items[0].Namespace).To(gomega.Equal(key.Namespace), "verifying secret namespace")
 	g.Expect(lst.Items[0].Name).To(gomega.Equal(key.Name), "verifying secret name")
 
-	cancelFunc()
 	wg.Wait()
 }
 
