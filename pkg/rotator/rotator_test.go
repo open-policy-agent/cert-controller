@@ -233,6 +233,7 @@ func TestReconcile(t *testing.T) {
 
 	// Verify certificates are regenerated
 	ensureWebhookPopulated(ctx, g, c, wh)
+	cancelFunc()
 	wg.Wait()
 }
 
@@ -278,6 +279,7 @@ func TestNamespacedCache(t *testing.T) {
 	g.Expect(lst.Items[0].Namespace).To(gomega.Equal(key.Namespace), "verifying secret namespace")
 	g.Expect(lst.Items[0].Name).To(gomega.Equal(key.Name), "verifying secret name")
 
+	cancelFunc()
 	wg.Wait()
 }
 
