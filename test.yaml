@@ -1,0 +1,99 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vpa-admission-controller
+  namespace: default
+  labels:
+    app: busybox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: busybox
+  template:
+    metadata:
+      labels:
+        app: busybox
+        foo: bar4
+    spec:
+      containers:
+        - name: busybox
+          image: busybox
+          command: ["sh", "-c", "watch ls /certs"]
+          volumeMounts:
+            - name: certs
+              mountPath: "/certs"
+              readOnly: true
+        - name: cert-controller
+          args:
+            - -cert-dir=/certs
+            - -ca-name=foocaname
+            - -secret-name=vpa-admission-controller-secret
+            - -service-name=fooservice
+            - -ca-organization=fooorg
+            - -namespace=default
+            - -dns-name=foo.bar.svc
+            - -webhook-name=vpa-webhook-config
+          imagePullPolicy: Never
+          image: cert-controller
+          resources:
+            limits:
+              cpu: 200m
+              memory: 500Mi
+            requests:
+              cpu: 50m
+              memory: 200Mi
+          volumeMounts:
+            - name: certs
+              mountPath: "/certs"
+              readOnly: true
+      volumes:
+        - name: certs
+          secret:
+            secretName: vpa-admission-controller-secret
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: vpa-webhook-config
+  labels:
+    product: foundation
+    team: compute
+    project: vertical-pod-autoscaler
+    role: admission-controller
+  annotations:
+    samson/server_side_apply: 'true'
+webhooks:
+  - name: vpa.k8s.io
+    failurePolicy: Ignore
+    admissionReviewVersions: ["v1beta1"]
+    rules:
+      - apiGroups:   [""]
+        apiVersions: ["v1"]
+        operations:  ["CREATE"]
+        resources:   ["pods"]
+    clientConfig:
+      caBundle: Cg==
+      service:
+        namespace: default
+        name: vpa-webhook
+    sideEffects: None
+    timeoutSeconds: 30
+
+# We need to create a bogus secret for the updater to fill
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    project: foo
+    team: compute
+    role: bar
+    product: foundation
+  name: vpa-admission-controller-secret
+  namespace: default
+  annotations:
+    samson/server_side_apply: 'true'
+
+# TODO: add clusterrole, clusterrolebinding, serviceaccount to read and update secrets and webhooks
