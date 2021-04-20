@@ -213,7 +213,7 @@ func TestReconcile(t *testing.T) {
 				ClientConfig: admissionv1.WebhookClientConfig{
 					URL: strPtr("https://localhost/webhook"),
 				},
-				AdmissionReviewVersions: []string{"v1beta1"},
+				AdmissionReviewVersions: []string{"v1", "v1beta1"},
 			},
 		},
 	}

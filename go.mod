@@ -1,6 +1,6 @@
 module github.com/open-policy-agent/cert-controller
 
-go 1.14
+go 1.16
 
 require (
 	github.com/onsi/gomega v1.10.2
