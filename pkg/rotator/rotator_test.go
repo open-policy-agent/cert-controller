@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
@@ -286,6 +287,9 @@ func TestReconcileWebhook(t *testing.T) {
 				},
 			},
 		}},
+		{
+			"apiservice", APIService, nil, []string{"spec", "caBundle"}, &apiregistrationv1.APIService{},
+		},
 	}
 
 	for _, tt := range testCases {

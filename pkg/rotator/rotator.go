@@ -46,7 +46,7 @@ const (
 
 var crLog = logf.Log.WithName("cert-rotation")
 
-//WebhookType it the type of webhook, either validating/mutating webhook or a CRD conversion webhook
+//WebhookType it the type of webhook, either validating/mutating webhook, a CRD conversion webhook, or an extension API server
 type WebhookType int
 
 const (
@@ -56,6 +56,8 @@ const (
 	Mutating
 	//CRDConversionWebhook indicates the webhook is a conversion webhook
 	CRDConversion
+	//APIServiceWebhook indicates the webhook is an extension API server
+	APIService
 )
 
 var _ manager.Runnable = &CertRotator{}
@@ -72,6 +74,7 @@ func (w WebhookInfo) gvk() schema.GroupVersionKind {
 		Validating:    {Group: "admissionregistration.k8s.io", Version: "v1", Kind: "ValidatingWebhookConfiguration"},
 		Mutating:      {Group: "admissionregistration.k8s.io", Version: "v1", Kind: "MutatingWebhookConfiguration"},
 		CRDConversion: {Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"},
+		APIService:    {Group: "apiregistration.k8s.io", Version: "v1", Kind: "APIService"},
 	}
 	return t2g[w.Type]
 }
@@ -288,6 +291,8 @@ func injectCert(updatedResource *unstructured.Unstructured, certPem []byte, webh
 		return injectCertToWebhook(updatedResource, certPem)
 	case CRDConversion:
 		return injectCertToConversionWebhook(updatedResource, certPem)
+	case APIService:
+		return injectCertToApiService(updatedResource, certPem)
 	}
 	return fmt.Errorf("Incorrect webhook type")
 }
@@ -325,6 +330,21 @@ func injectCertToConversionWebhook(crd *unstructured.Unstructured, certPem []byt
 		return errors.New("`conversion.webhook.clientConfig` field not found in CustomResourceDefinition")
 	}
 	if err := unstructured.SetNestedField(crd.Object, base64.StdEncoding.EncodeToString(certPem), "spec", "conversion", "webhook", "clientConfig", "caBundle"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func injectCertToApiService(apiService *unstructured.Unstructured, certPem []byte) error {
+	_, found, err := unstructured.NestedMap(apiService.Object, "spec")
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("`spec` field not found in APIService")
+	}
+	if err := unstructured.SetNestedField(apiService.Object, base64.StdEncoding.EncodeToString(certPem), "spec", "caBundle"); err != nil {
 		return err
 	}
 
