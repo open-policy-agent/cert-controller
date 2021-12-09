@@ -174,57 +174,26 @@ func setupManager(g *gomega.GomegaWithT) manager.Manager {
 	return mgr
 }
 
-// Verifies certificate bootstrapping and webhook reconciliation.
-func TestReconcileValidatingWebhook(t *testing.T) {
-	const nsName = "test-reconcile-validating"
-	const secretName = "test-secret"
-	const whName = "test-validating-webhook"
-
+func testWebhook(t *testing.T, secretKey types.NamespacedName, rotator *CertRotator, wh client.Object) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
+
 	g := gomega.NewWithT(t)
 	mgr := setupManager(g)
 	c := mgr.GetClient()
 
-	key := types.NamespacedName{Namespace: nsName, Name: secretName}
-	rotator := &CertRotator{
-		SecretKey: key,
-		Webhooks: []WebhookInfo{
-			{
-				Name: whName,
-				Type: Validating,
-			},
-		},
-	}
 	err := AddRotator(mgr, rotator)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
 
-	createSecret(ctx, g, c, key)
+	createSecret(ctx, g, c, secretKey)
 
-	sideEffectNone := admissionv1.SideEffectClassNone
-	wh := &admissionv1.ValidatingWebhookConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: whName,
-		},
-
-		Webhooks: []admissionv1.ValidatingWebhook{
-			{
-				Name:        "testpolicy.kubernetes.io",
-				SideEffects: &sideEffectNone,
-				ClientConfig: admissionv1.WebhookClientConfig{
-					URL: strPtr("https://localhost/webhook"),
-				},
-				AdmissionReviewVersions: []string{"v1", "v1beta1"},
-			},
-		},
-	}
 	err = c.Create(ctx, wh)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating webhookConfig")
 
 	wg := StartTestManager(ctx, mgr, g)
 
 	// Wait for certificates to generated
-	ensureCertWasGenerated(ctx, g, c, key)
+	ensureCertWasGenerated(ctx, g, c, secretKey)
 
 	// Wait for certificates to populated in managed webhookConfigurations
 	ensureWebhookPopulated(ctx, g, c, wh)
@@ -234,72 +203,69 @@ func TestReconcileValidatingWebhook(t *testing.T) {
 
 	// Verify certificates are regenerated
 	ensureWebhookPopulated(ctx, g, c, wh)
+
 	cancelFunc()
 	wg.Wait()
 }
 
-// Verifies certificate bootstrapping and webhook reconciliation.
-func TestReconcileMutatingWebhook(t *testing.T) {
-	const nsName = "test-reconcile-mutating"
-	const secretName = "test-secret"
-	const whName = "test-mutating-webhook"
-
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	g := gomega.NewWithT(t)
-	mgr := setupManager(g)
-	c := mgr.GetClient()
-
-	key := types.NamespacedName{Namespace: nsName, Name: secretName}
-	rotator := &CertRotator{
-		SecretKey: key,
-		Webhooks: []WebhookInfo{
-			{
-				Name: whName,
-				Type: Mutating,
-			},
-		},
-	}
-	err := AddRotator(mgr, rotator)
-	g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
-
-	createSecret(ctx, g, c, key)
-
+func TestReconcileWebhook(t *testing.T) {
 	sideEffectNone := admissionv1.SideEffectClassNone
-	wh := &admissionv1.MutatingWebhookConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: whName,
-		},
-
-		Webhooks: []admissionv1.MutatingWebhook{
-			{
-				Name:        "testpolicy.kubernetes.io",
-				SideEffects: &sideEffectNone,
-				ClientConfig: admissionv1.WebhookClientConfig{
-					URL: strPtr("https://localhost/webhook"),
+	testCases := []struct {
+		name          string
+		webhookType   WebhookType
+		webhookConfig client.Object
+	}{
+		{"validating", Validating, &admissionv1.ValidatingWebhookConfiguration{
+			Webhooks: []admissionv1.ValidatingWebhook{
+				{
+					Name:        "testpolicy.kubernetes.io",
+					SideEffects: &sideEffectNone,
+					ClientConfig: admissionv1.WebhookClientConfig{
+						URL: strPtr("https://localhost/webhook"),
+					},
+					AdmissionReviewVersions: []string{"v1", "v1beta1"},
 				},
-				AdmissionReviewVersions: []string{"v1", "v1beta1"},
 			},
-		},
+		}},
+		{"mutating", Mutating, &admissionv1.MutatingWebhookConfiguration{
+			Webhooks: []admissionv1.MutatingWebhook{
+				{
+					Name:        "testpolicy.kubernetes.io",
+					SideEffects: &sideEffectNone,
+					ClientConfig: admissionv1.WebhookClientConfig{
+						URL: strPtr("https://localhost/webhook"),
+					},
+					AdmissionReviewVersions: []string{"v1", "v1beta1"},
+				},
+			},
+		}},
 	}
-	err = c.Create(ctx, wh)
-	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating webhookConfig")
 
-	wg := StartTestManager(ctx, mgr, g)
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				nsName     = fmt.Sprintf("test-reconcile-%s", tt.name)
+				secretName = "test-secret"
+				whName     = fmt.Sprintf("test-webhook-%s", tt.name)
+			)
 
-	// Wait for certificates to generated
-	ensureCertWasGenerated(ctx, g, c, key)
+			key := types.NamespacedName{Namespace: nsName, Name: secretName}
+			rotator := &CertRotator{
+				SecretKey: key,
+				Webhooks: []WebhookInfo{
+					{
+						Name: whName,
+						Type: tt.webhookType,
+					},
+				},
+			}
 
-	// Wait for certificates to populated in managed webhookConfigurations
-	ensureWebhookPopulated(ctx, g, c, wh)
+			wh := tt.webhookConfig
+			wh.SetName(whName)
 
-	// Zero out the certificates, ensure they are repopulated
-	resetWebhook(ctx, g, c, wh)
-
-	// Verify certificates are regenerated
-	ensureWebhookPopulated(ctx, g, c, wh)
-	cancelFunc()
-	wg.Wait()
+			testWebhook(t, key, rotator, wh)
+		})
+	}
 }
 
 // Verifies that the rotator cache only reads from a single namespace.
