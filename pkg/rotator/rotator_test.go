@@ -3,6 +3,7 @@ package rotator
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"testing"
 	"time"
 
@@ -174,10 +175,10 @@ func setupManager(g *gomega.GomegaWithT) manager.Manager {
 }
 
 // Verifies certificate bootstrapping and webhook reconciliation.
-func TestReconcile(t *testing.T) {
-	const nsName = "test-reconcile"
+func TestReconcileValidatingWebhook(t *testing.T) {
+	const nsName = "test-reconcile-validating"
 	const secretName = "test-secret"
-	const whName = "test-webhook"
+	const whName = "test-validating-webhook"
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
@@ -207,6 +208,70 @@ func TestReconcile(t *testing.T) {
 		},
 
 		Webhooks: []admissionv1.ValidatingWebhook{
+			{
+				Name:        "testpolicy.kubernetes.io",
+				SideEffects: &sideEffectNone,
+				ClientConfig: admissionv1.WebhookClientConfig{
+					URL: strPtr("https://localhost/webhook"),
+				},
+				AdmissionReviewVersions: []string{"v1", "v1beta1"},
+			},
+		},
+	}
+	err = c.Create(ctx, wh)
+	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating webhookConfig")
+
+	wg := StartTestManager(ctx, mgr, g)
+
+	// Wait for certificates to generated
+	ensureCertWasGenerated(ctx, g, c, key)
+
+	// Wait for certificates to populated in managed webhookConfigurations
+	ensureWebhookPopulated(ctx, g, c, wh)
+
+	// Zero out the certificates, ensure they are repopulated
+	resetWebhook(ctx, g, c, wh)
+
+	// Verify certificates are regenerated
+	ensureWebhookPopulated(ctx, g, c, wh)
+	cancelFunc()
+	wg.Wait()
+}
+
+// Verifies certificate bootstrapping and webhook reconciliation.
+func TestReconcileMutatingWebhook(t *testing.T) {
+	const nsName = "test-reconcile-mutating"
+	const secretName = "test-secret"
+	const whName = "test-mutating-webhook"
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+	g := gomega.NewWithT(t)
+	mgr := setupManager(g)
+	c := mgr.GetClient()
+
+	key := types.NamespacedName{Namespace: nsName, Name: secretName}
+	rotator := &CertRotator{
+		SecretKey: key,
+		Webhooks: []WebhookInfo{
+			{
+				Name: whName,
+				Type: Mutating,
+			},
+		},
+	}
+	err := AddRotator(mgr, rotator)
+	g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
+
+	createSecret(ctx, g, c, key)
+
+	sideEffectNone := admissionv1.SideEffectClassNone
+	wh := &admissionv1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: whName,
+		},
+
+		Webhooks: []admissionv1.MutatingWebhook{
 			{
 				Name:        "testpolicy.kubernetes.io",
 				SideEffects: &sideEffectNone,
@@ -296,23 +361,28 @@ func ensureCertWasGenerated(ctx context.Context, g *gomega.WithT, c client.Reade
 	}, timeout, interval).Should(gomega.BeTrue(), "waiting for certificate generation")
 }
 
-func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Reader, wh *admissionv1.ValidatingWebhookConfiguration) {
+func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}) {
 	const timeout = 15 * time.Second
 	const interval = 50 * time.Millisecond
-	key := types.NamespacedName{
-		Name: wh.Name,
-	}
+
+	// convert to unstructured object to accept either ValidatingWebhookConfiguration or MutatingWebhookConfiguration
+	whu := &unstructured.Unstructured{}
+	err := c.Scheme().Convert(wh, whu, nil)
+	g.Expect(err).NotTo(gomega.HaveOccurred(), "cannot convert to webhook to unstructured")
+
+	key := client.ObjectKeyFromObject(whu)
 	g.Eventually(func() bool {
-		if err := c.Get(ctx, key, wh); err != nil {
+		if err := c.Get(ctx, key, whu); err != nil {
+			return false
+		}
+		webhooks, found, err := unstructured.NestedSlice(whu.Object, "webhooks")
+		if len(webhooks) == 0 || !found || err != nil {
 			return false
 		}
 
-		if len(wh.Webhooks) == 0 {
-			return false
-		}
-
-		for _, vw := range wh.Webhooks {
-			if len(vw.ClientConfig.CABundle) == 0 {
+		for _, w := range webhooks {
+			clientConfig, found, err := unstructured.NestedMap(w.(map[string]interface{}), "clientConfig")
+			if !found || err != nil || clientConfig["caBundle"] == nil || len(clientConfig["caBundle"].(string)) == 0 {
 				return false
 			}
 		}
@@ -320,18 +390,29 @@ func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Reade
 	}, timeout, interval).Should(gomega.BeTrue(), "waiting for webhook reconciliation")
 }
 
-func resetWebhook(ctx context.Context, g *gomega.WithT, c client.Client, wh *admissionv1.ValidatingWebhookConfiguration) {
-	key := types.NamespacedName{
-		Name: wh.Name,
-	}
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if err := c.Get(ctx, key, wh); err != nil {
+func resetWebhook(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}) {
+	// convert to unstructured object to accept either ValidatingWebhookConfiguration or MutatingWebhookConfiguration
+	whu := &unstructured.Unstructured{}
+	err := c.Scheme().Convert(wh, whu, nil)
+	g.Expect(err).NotTo(gomega.HaveOccurred(), "cannot convert to webhook to unstructured")
+
+	key := client.ObjectKeyFromObject(whu)
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := c.Get(ctx, key, whu); err != nil {
 			return err
 		}
-		for i := range wh.Webhooks {
-			wh.Webhooks[i].ClientConfig.CABundle = nil
+
+		webhooks, _, err := unstructured.NestedSlice(whu.Object, "webhooks")
+		if err != nil {
+			return err
 		}
-		return c.Update(ctx, wh)
+
+		for _, w := range webhooks {
+			if err = unstructured.SetNestedField(w.(map[string]interface{}), nil, "clientConfig", "caBundle"); err != nil {
+				return err
+			}
+		}
+		return c.Update(ctx, whu)
 	})
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "resetting webhook")
 }
