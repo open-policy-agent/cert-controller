@@ -7,6 +7,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	go.uber.org/atomic v1.7.0
 	k8s.io/api v0.21.4
+	k8s.io/apiextensions-apiserver v0.21.4
 	k8s.io/apimachinery v0.21.4
 	k8s.io/client-go v0.21.4
 	sigs.k8s.io/controller-runtime v0.9.7
