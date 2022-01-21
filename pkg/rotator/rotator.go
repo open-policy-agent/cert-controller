@@ -71,7 +71,7 @@ func (w WebhookInfo) gvk() schema.GroupVersionKind {
 	t2g := map[WebhookType]schema.GroupVersionKind{
 		Validating:    {Group: "admissionregistration.k8s.io", Version: "v1", Kind: "ValidatingWebhookConfiguration"},
 		Mutating:      {Group: "admissionregistration.k8s.io", Version: "v1", Kind: "MutatingWebhookConfiguration"},
-		CRDConversion: {Group: "apiextensions.k8s.io", Version: "v1beta1", Kind: "CustomResourceDefinition"},
+		CRDConversion: {Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"},
 	}
 	return t2g[w.Type]
 }
@@ -317,14 +317,14 @@ func injectCertToWebhook(wh *unstructured.Unstructured, certPem []byte) error {
 }
 
 func injectCertToConversionWebhook(crd *unstructured.Unstructured, certPem []byte) error {
-	_, found, err := unstructured.NestedMap(crd.Object, "spec", "conversion", "webhookClientConfig")
+	_, found, err := unstructured.NestedMap(crd.Object, "spec", "conversion", "webhook", "clientConfig")
 	if err != nil {
 		return err
 	}
 	if !found {
-		return errors.New("`webhookClientConfig` field not found in CustomResourceDefinition")
+		return errors.New("`conversion.webhook.clientConfig` field not found in CustomResourceDefinition")
 	}
-	if err := unstructured.SetNestedField(crd.Object, base64.StdEncoding.EncodeToString(certPem), "spec", "conversion", "webhookClientConfig", "caBundle"); err != nil {
+	if err := unstructured.SetNestedField(crd.Object, base64.StdEncoding.EncodeToString(certPem), "spec", "conversion", "webhook", "clientConfig", "caBundle"); err != nil {
 		return err
 	}
 
