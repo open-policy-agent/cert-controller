@@ -177,6 +177,8 @@ func setupManager(g *gomega.GomegaWithT) manager.Manager {
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
 	err = apiextensionsv1.AddToScheme(scheme)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
+	err = apiregistrationv1.AddToScheme(scheme)
+	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
 
 	opts := manager.Options{
 		Scheme:             scheme,
@@ -255,7 +257,9 @@ func TestReconcileWebhook(t *testing.T) {
 			},
 		}},
 		{"crdconversion", CRDConversion, nil, []string{"spec", "conversion", "webhook", "clientConfig", "caBundle"}, &apiextensionsv1.CustomResourceDefinition{
-			ObjectMeta: metav1.ObjectMeta{Name: "testcrds.example.com"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "testcrds.example.com",
+			},
 			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 				Group: "example.com",
 				Scope: apiextensionsv1.NamespaceScoped,
@@ -288,7 +292,21 @@ func TestReconcileWebhook(t *testing.T) {
 			},
 		}},
 		{
-			"apiservice", APIService, nil, []string{"spec", "caBundle"}, &apiregistrationv1.APIService{},
+			"apiservice", APIService, nil, []string{"spec", "caBundle"}, &apiregistrationv1.APIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "v1alpha1.example.com",
+				},
+				Spec: apiregistrationv1.APIServiceSpec{
+					Group:                "example.com",
+					GroupPriorityMinimum: 1,
+					Version:              "v1alpha1",
+					VersionPriority:      1,
+					Service: &apiregistrationv1.ServiceReference{
+						Namespace: "kube-system",
+						Name:      "example-api",
+					},
+				},
+			},
 		},
 	}
 
@@ -300,7 +318,7 @@ func TestReconcileWebhook(t *testing.T) {
 				whName     = fmt.Sprintf("test-webhook-%s", tt.name)
 			)
 
-			// CRDConversion type requires exact name
+			// CRDConversion and APIService require special name format
 			if tt.webhookConfig.GetName() != "" {
 				whName = tt.webhookConfig.GetName()
 			}
