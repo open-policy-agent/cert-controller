@@ -2,6 +2,7 @@ package rotator
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"testing"
 	"time"
@@ -22,10 +23,13 @@ import (
 
 var (
 	cr = &CertRotator{
-		CAName:                      "ca",
-		CAOrganization:              "org",
-		DNSName:                     "service.namespace",
-		EnableExtKeyUsageClientAuth: true,
+		CAName:         "ca",
+		CAOrganization: "org",
+		DNSName:        "service.namespace",
+		ExtKeyUsages: &[]x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
+		},
 	}
 	//certValidityDuration = 10 * 365 * 24 * time.Hour
 	begin = time.Now().Add(-1 * time.Hour)
@@ -63,7 +67,7 @@ func TestCertExpiry(t *testing.T) {
 		t.Error("Generated cert is not valid")
 	}
 
-	valid, err := ValidCert(caArtifacts.CertPEM, cert, key, cr.DNSName, cr.extKeyUsages, time.Now().Add(11*365*24*time.Hour))
+	valid, err := ValidCert(caArtifacts.CertPEM, cert, key, cr.DNSName, cr.ExtKeyUsages, time.Now().Add(11*365*24*time.Hour))
 	if err == nil {
 		t.Error("Generated cert has not expired when it should have")
 	}
@@ -114,7 +118,7 @@ func TestCAExpiry(t *testing.T) {
 		t.Error("Generated cert is not valid")
 	}
 
-	valid, err := ValidCert(caArtifacts.CertPEM, caArtifacts.CertPEM, caArtifacts.KeyPEM, cr.CAName, cr.extKeyUsages, time.Now().Add(11*365*24*time.Hour))
+	valid, err := ValidCert(caArtifacts.CertPEM, caArtifacts.CertPEM, caArtifacts.KeyPEM, cr.CAName, cr.ExtKeyUsages, time.Now().Add(11*365*24*time.Hour))
 	if err == nil {
 		t.Error("Generated cert has not expired when it should have")
 	}

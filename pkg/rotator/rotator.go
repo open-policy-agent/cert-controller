@@ -147,22 +147,21 @@ type SyncingReader interface {
 
 // CertRotator contains cert artifacts and a channel to close when the certs are ready.
 type CertRotator struct {
-	reader                      SyncingReader
-	writer                      client.Writer
-	SecretKey                   types.NamespacedName
-	CertDir                     string
-	CAName                      string
-	CAOrganization              string
-	DNSName                     string
-	IsReady                     chan struct{}
-	Webhooks                    []WebhookInfo
-	RestartOnSecretRefresh      bool
-	EnableExtKeyUsageClientAuth bool
-	extKeyUsages                []x509.ExtKeyUsage
-	certsMounted                chan struct{}
-	certsNotMounted             chan struct{}
-	wasCAInjected               *atomic.Bool
-	caNotInjected               chan struct{}
+	reader                 SyncingReader
+	writer                 client.Writer
+	SecretKey              types.NamespacedName
+	CertDir                string
+	CAName                 string
+	CAOrganization         string
+	DNSName                string
+	IsReady                chan struct{}
+	Webhooks               []WebhookInfo
+	RestartOnSecretRefresh bool
+	ExtKeyUsages           *[]x509.ExtKeyUsage
+	certsMounted           chan struct{}
+	certsNotMounted        chan struct{}
+	wasCAInjected          *atomic.Bool
+	caNotInjected          chan struct{}
 }
 
 // Start starts the CertRotator runnable to rotate certs and ensure the certs are ready.
@@ -174,9 +173,8 @@ func (cr *CertRotator) Start(ctx context.Context) error {
 		return errors.New("failed waiting for reader to sync")
 	}
 
-	cr.extKeyUsages = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
-	if cr.EnableExtKeyUsageClientAuth {
-		cr.extKeyUsages = append(cr.extKeyUsages, x509.ExtKeyUsageClientAuth)
+	if cr.ExtKeyUsages == nil {
+		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	}
 
 	// explicitly rotate on the first round so that the certificate
@@ -466,7 +464,7 @@ func (cr *CertRotator) CreateCertPEM(ca *KeyPairArtifacts, begin, end time.Time)
 		NotBefore:             begin,
 		NotAfter:              end,
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           cr.extKeyUsages,
+		ExtKeyUsage:           *cr.ExtKeyUsages,
 		BasicConstraintsValid: true,
 	}
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -502,7 +500,7 @@ func lookaheadTime() time.Time {
 }
 
 func (cr *CertRotator) validServerCert(caCert, cert, key []byte) bool {
-	valid, err := ValidCert(caCert, cert, key, cr.DNSName, cr.extKeyUsages, lookaheadTime())
+	valid, err := ValidCert(caCert, cert, key, cr.DNSName, cr.ExtKeyUsages, lookaheadTime())
 	if err != nil {
 		return false
 	}
@@ -517,7 +515,7 @@ func (cr *CertRotator) validCACert(cert, key []byte) bool {
 	return valid
 }
 
-func ValidCert(caCert, cert, key []byte, dnsName string, keyUsages []x509.ExtKeyUsage, at time.Time) (bool, error) {
+func ValidCert(caCert, cert, key []byte, dnsName string, keyUsages *[]x509.ExtKeyUsage, at time.Time) (bool, error) {
 	if len(caCert) == 0 || len(cert) == 0 || len(key) == 0 {
 		return false, errors.New("empty cert")
 	}
@@ -551,7 +549,7 @@ func ValidCert(caCert, cert, key []byte, dnsName string, keyUsages []x509.ExtKey
 		DNSName:     dnsName,
 		Roots:       pool,
 		CurrentTime: at,
-		KeyUsages:   keyUsages,
+		KeyUsages:   *keyUsages,
 	})
 	if err != nil {
 		return false, errors.Wrap(err, "verifying cert")
