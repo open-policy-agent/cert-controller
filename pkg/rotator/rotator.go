@@ -545,12 +545,17 @@ func ValidCert(caCert, cert, key []byte, dnsName string, keyUsages *[]x509.ExtKe
 	if err != nil {
 		return false, errors.Wrap(err, "parsing cert")
 	}
-	_, err = crt.Verify(x509.VerifyOptions{
+
+	opt := x509.VerifyOptions{
 		DNSName:     dnsName,
 		Roots:       pool,
 		CurrentTime: at,
-		KeyUsages:   *keyUsages,
-	})
+	}
+	if keyUsages != nil {
+		opt.KeyUsages = *keyUsages
+	}
+
+	_, err = crt.Verify(opt)
 	if err != nil {
 		return false, errors.Wrap(err, "verifying cert")
 	}
