@@ -46,7 +46,7 @@ const (
 
 var crLog = logf.Log.WithName("cert-rotation")
 
-//WebhookType it the type of webhook, either validating/mutating webhook, a CRD conversion webhook, or an extension API server
+// WebhookType it the type of webhook, either validating/mutating webhook, a CRD conversion webhook, or an extension API server
 type WebhookType int
 
 const (
@@ -61,8 +61,20 @@ const (
 )
 
 var _ manager.Runnable = &CertRotator{}
+var _ manager.LeaderElectionRunnable = &CertRotator{}
+var _ manager.Runnable = controllerWrapper{}
+var _ manager.LeaderElectionRunnable = controllerWrapper{}
 
-//WebhookInfo is used by the rotator to receive info about resources to be updated with certificates
+type controllerWrapper struct {
+	controller.Controller
+	needLeaderElection bool
+}
+
+func (cw controllerWrapper) NeedLeaderElection() bool {
+	return cw.needLeaderElection
+}
+
+// WebhookInfo is used by the rotator to receive info about resources to be updated with certificates
 type WebhookInfo struct {
 	//Name is the name of the webhook for a validating or mutating webhook, or the CRD name in case of a CRD conversion webhook
 	Name string
@@ -104,13 +116,14 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 	}
 
 	reconciler := &ReconcileWH{
-		cache:         cache,
-		writer:        mgr.GetClient(), // TODO
-		scheme:        mgr.GetScheme(),
-		ctx:           context.Background(),
-		secretKey:     cr.SecretKey,
-		wasCAInjected: cr.wasCAInjected,
-		webhooks:      cr.Webhooks,
+		cache:              cache,
+		writer:             mgr.GetClient(), // TODO
+		scheme:             mgr.GetScheme(),
+		ctx:                context.Background(),
+		secretKey:          cr.SecretKey,
+		wasCAInjected:      cr.wasCAInjected,
+		webhooks:           cr.Webhooks,
+		needLeaderElection: cr.RequireLeaderElection,
 	}
 	if err := addController(mgr, reconciler); err != nil {
 		return err
@@ -147,8 +160,9 @@ type SyncingReader interface {
 
 // CertRotator contains cert artifacts and a channel to close when the certs are ready.
 type CertRotator struct {
-	reader                 SyncingReader
-	writer                 client.Writer
+	reader SyncingReader
+	writer client.Writer
+
 	SecretKey              types.NamespacedName
 	CertDir                string
 	CAName                 string
@@ -158,10 +172,18 @@ type CertRotator struct {
 	Webhooks               []WebhookInfo
 	RestartOnSecretRefresh bool
 	ExtKeyUsages           *[]x509.ExtKeyUsage
-	certsMounted           chan struct{}
-	certsNotMounted        chan struct{}
-	wasCAInjected          *atomic.Bool
-	caNotInjected          chan struct{}
+	// RequireLeaderElection should be set to true if the CertRotator needs to
+	// be run in the leader election mode.
+	RequireLeaderElection bool
+
+	certsMounted    chan struct{}
+	certsNotMounted chan struct{}
+	wasCAInjected   *atomic.Bool
+	caNotInjected   chan struct{}
+}
+
+func (cr *CertRotator) NeedLeaderElection() bool {
+	return cr.RequireLeaderElection
 }
 
 // Start starts the CertRotator runnable to rotate certs and ensure the certs are ready.
@@ -578,8 +600,11 @@ func reconcileSecretAndWebhookMapFunc(webhook WebhookInfo, r *ReconcileWH) func(
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func addController(mgr manager.Manager, r *ReconcileWH) error {
 	// Create a new controller
-	c, err := controller.New("cert-rotator", mgr, controller.Options{Reconciler: r})
+	c, err := controller.NewUnmanaged("cert-rotator", mgr, controller.Options{Reconciler: r})
 	if err != nil {
+		return err
+	}
+	if err := mgr.Add(controllerWrapper{c, r.needLeaderElection}); err != nil {
 		return err
 	}
 
@@ -611,13 +636,14 @@ var _ reconcile.Reconciler = &ReconcileWH{}
 // ReconcileWH reconciles a validatingwebhookconfiguration, making sure it
 // has the appropriate CA cert
 type ReconcileWH struct {
-	writer        client.Writer
-	cache         cache.Cache
-	scheme        *runtime.Scheme
-	ctx           context.Context
-	secretKey     types.NamespacedName
-	webhooks      []WebhookInfo
-	wasCAInjected *atomic.Bool
+	writer             client.Writer
+	cache              cache.Cache
+	scheme             *runtime.Scheme
+	ctx                context.Context
+	secretKey          types.NamespacedName
+	webhooks           []WebhookInfo
+	wasCAInjected      *atomic.Bool
+	needLeaderElection bool
 }
 
 // Reconcile reads that state of the cluster for a validatingwebhookconfiguration
