@@ -330,7 +330,7 @@ func injectCertToWebhook(wh *unstructured.Unstructured, certPem []byte) error {
 		return err
 	}
 	if !found {
-		return errors.New("`webhooks` field not found in ValidatingWebhookConfiguration")
+		return nil
 	}
 	for i, h := range webhooks {
 		hook, ok := h.(map[string]interface{})
