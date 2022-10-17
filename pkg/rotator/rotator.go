@@ -180,6 +180,7 @@ type CertRotator struct {
 	certsNotMounted chan struct{}
 	wasCAInjected   *atomic.Bool
 	caNotInjected   chan struct{}
+	ExecuteOnce     bool
 }
 
 func (cr *CertRotator) NeedLeaderElection() bool {
@@ -211,6 +212,10 @@ func (cr *CertRotator) Start(ctx context.Context) error {
 	// Once the certs are ready, close the channel.
 	go cr.ensureCertsMounted()
 	go cr.ensureReady()
+
+	if cr.ExecuteOnce {
+		go cr.exitOnceReady()
+	}
 
 	ticker := time.NewTicker(rotationCheckFrequency)
 
@@ -776,4 +781,11 @@ func (cr *CertRotator) ensureReady() {
 	}
 	crLog.Info("CA certs are injected to webhooks")
 	close(cr.IsReady)
+}
+
+// exitOnceReady exits the application once the certs are ready and injected to webhooks
+func (cr *CertRotator) exitOnceReady() {
+	<-cr.IsReady
+	crLog.Info("Secrets have been updated; exiting.")
+	os.Exit(0)
 }
