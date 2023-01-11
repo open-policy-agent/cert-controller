@@ -51,6 +51,7 @@ The following code snippet is taken from the Gatekeeper project:
 			CAName:         caName,
 			CAOrganization: caOrganization,
 			DNSName:        dnsName,
+			ExtraDNSNames:  extraDnsNames,
 			IsReady:        setupFinished,
 			VWHName:        vwhName,
 		}); err != nil {

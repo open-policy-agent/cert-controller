@@ -26,6 +26,9 @@ var (
 		CAName:         "ca",
 		CAOrganization: "org",
 		DNSName:        "service.namespace",
+		ExtraDNSNames: []string{
+			"other-service.namespace",
+		},
 		ExtKeyUsages: &[]x509.ExtKeyUsage{
 			x509.ExtKeyUsageClientAuth,
 			x509.ExtKeyUsageServerAuth,
@@ -48,7 +51,12 @@ func TestCertSigning(t *testing.T) {
 	}
 
 	if !cr.validServerCert(caArtifacts.CertPEM, cert, key) {
-		t.Error("Generated cert is not valid")
+		t.Error("Generated cert is not valid for common name")
+	}
+
+	valid, err := ValidCert(caArtifacts.CertPEM, cert, key, cr.ExtraDNSNames[0], cr.ExtKeyUsages, lookaheadTime())
+	if err != nil || !valid {
+		t.Error("Generated cert is not valid for ExtraDnsName")
 	}
 }
 
