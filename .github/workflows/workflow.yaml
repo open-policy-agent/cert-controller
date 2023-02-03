@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Set up Go 1.17
+      - name: Set up Go 1.19
         uses: actions/setup-go@v3
         with:
-          go-version: 1.17
+          go-version: 1.19
 
       - name: Check out code into the Go module directory
         uses: actions/checkout@v2
@@ -24,7 +24,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.46.2
+          version: v1.51.0
           args: --timeout 5m
 
   test:
@@ -32,10 +32,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Set up Go 1.17
+      - name: Set up Go 1.19
         uses: actions/setup-go@v2
         with:
-          go-version: 1.17
+          go-version: 1.19
         id: go
 
       - name: Check out code into the Go module directory
@@ -43,11 +43,26 @@ jobs:
 
       - name: Install kubebuilder
         run: |
-          curl -L -O "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_${KUBEBUILDER_VERSION}_linux_amd64.tar.gz" &&\
-          tar -zxvf kubebuilder_${KUBEBUILDER_VERSION}_linux_amd64.tar.gz &&\
-          sudo mv kubebuilder_${KUBEBUILDER_VERSION}_linux_amd64 /usr/local/kubebuilder
+          curl -L -O "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_$(go env GOOS)_$(go env GOARCH)" && \
+          curl -L -O "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-server-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
+          curl -L -O "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-client-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
+          curl -L -O "https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
+          tar -zxvf kubernetes-server-$(go env GOOS)-$(go env GOARCH).tar.gz && \
+          tar -zxvf kubernetes-client-$(go env GOOS)-$(go env GOARCH).tar.gz && \
+          tar -zxvf etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz && \
+          chmod +x kubebuilder_$(go env GOOS)_$(go env GOARCH) && \
+          chmod +x kubernetes/server/bin/kube-apiserver && \
+          chmod +x kubernetes/client/bin/kubectl && \
+          chmod +x etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH)/etcd && \
+          sudo mkdir -p /usr/local/kubebuilder/bin && \
+          sudo mv kubebuilder_$(go env GOOS)_$(go env GOARCH) /usr/local/kubebuilder/bin/kubebuilder && \
+          sudo mv kubernetes/server/bin/kube-apiserver /usr/local/kubebuilder/bin/kube-apiserver && \
+          sudo mv kubernetes/server/bin/kubectl /usr/local/kubebuilder/bin/kubectl && \
+          sudo mv etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH)/etcd /usr/local/kubebuilder/bin/etcd
         env:
-          KUBEBUILDER_VERSION: 2.3.1
+          KUBEBUILDER_VERSION: 3.9.0
+          KUBERNETES_VERSION: 1.26.1
+          ETCD_VERSION: 3.5.7
 
       - name: Unit test
         run: make test

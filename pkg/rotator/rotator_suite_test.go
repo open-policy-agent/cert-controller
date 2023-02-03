@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -18,7 +19,10 @@ var cfg *rest.Config
 
 // TestMain runs before package tests and starts a local apiserver instance.
 func TestMain(m *testing.M) {
-	t := &envtest.Environment{}
+	t := &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "externaldata", "crds")},
+		ErrorIfCRDPathMissing: true,
+	}
 
 	var err error
 	if cfg, err = t.Start(); err != nil {

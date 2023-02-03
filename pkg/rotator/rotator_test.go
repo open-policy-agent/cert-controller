@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/onsi/gomega"
+	externaldatav1beta1 "github.com/open-policy-agent/frameworks/constraint/pkg/apis/externaldata/v1beta1"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -20,6 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
+
+const ValidCABundle = "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIwekNDQVgyZ0F3SUJBZ0lKQUkvTTdCWWp3Qit1TUEwR0NTcUdTSWIzRFFFQkJRVUFNRVV4Q3pBSkJnTlYKQkFZVEFrRlZNUk13RVFZRFZRUUlEQXBUYjIxbExWTjBZWFJsTVNFd0h3WURWUVFLREJoSmJuUmxjbTVsZENCWAphV1JuYVhSeklGQjBlU0JNZEdRd0hoY05NVEl3T1RFeU1qRTFNakF5V2hjTk1UVXdPVEV5TWpFMU1qQXlXakJGCk1Rc3dDUVlEVlFRR0V3SkJWVEVUTUJFR0ExVUVDQXdLVTI5dFpTMVRkR0YwWlRFaE1COEdBMVVFQ2d3WVNXNTAKWlhKdVpYUWdWMmxrWjJsMGN5QlFkSGtnVEhSa01Gd3dEUVlKS29aSWh2Y05BUUVCQlFBRFN3QXdTQUpCQU5MSgpoUEhoSVRxUWJQa2xHM2liQ1Z4d0dNUmZwL3Y0WHFoZmRRSGRjVmZIYXA2TlE1V29rLzR4SUErdWkzNS9NbU5hCnJ0TnVDK0JkWjF0TXVWQ1BGWmNDQXdFQUFhTlFNRTR3SFFZRFZSME9CQllFRkp2S3M4UmZKYVhUSDA4VytTR3YKelF5S24wSDhNQjhHQTFVZEl3UVlNQmFBRkp2S3M4UmZKYVhUSDA4VytTR3Z6UXlLbjBIOE1Bd0dBMVVkRXdRRgpNQU1CQWY4d0RRWUpLb1pJaHZjTkFRRUZCUUFEUVFCSmxmZkpIeWJqREd4Uk1xYVJtRGhYMCs2djAyVFVLWnNXCnI1UXVWYnBRaEg2dSswVWdjVzBqcDlRd3B4b1BUTFRXR1hFV0JCQnVyeEZ3aUNCaGtRK1YKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
 
 var (
 	cr = &CertRotator{
@@ -183,14 +186,16 @@ func TestEmptyIsInvalid(t *testing.T) {
 func setupManager(g *gomega.GomegaWithT) manager.Manager {
 	disabledMetrics := "0"
 
+	var addToSchemes runtime.SchemeBuilder
+
+	addToSchemes = append(addToSchemes, corev1.AddToScheme)
+	addToSchemes = append(addToSchemes, admissionv1.AddToScheme)
+	addToSchemes = append(addToSchemes, apiextensionsv1.AddToScheme)
+	addToSchemes = append(addToSchemes, apiregistrationv1.AddToScheme)
+	addToSchemes = append(addToSchemes, externaldatav1beta1.AddToScheme)
+
 	scheme := runtime.NewScheme()
-	err := corev1.AddToScheme(scheme)
-	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
-	err = admissionv1.AddToScheme(scheme)
-	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
-	err = apiextensionsv1.AddToScheme(scheme)
-	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
-	err = apiregistrationv1.AddToScheme(scheme)
+	err := addToSchemes.AddToScheme(scheme)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
 
 	opts := manager.Options{
@@ -318,6 +323,22 @@ func TestReconcileWebhook(t *testing.T) {
 						Namespace: "kube-system",
 						Name:      "example-api",
 					},
+				},
+			},
+		},
+		{
+			"externaldataprovider", ExternalDataProvider, nil, []string{"spec", "caBundle"}, &externaldatav1beta1.Provider{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "externaldata.gatekeeper.sh/v1beta1",
+					Kind:       "Provider",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-provider",
+				},
+				Spec: externaldatav1beta1.ProviderSpec{
+					URL:      "https://my-provider:8080",
+					Timeout:  10,
+					CABundle: ValidCABundle,
 				},
 			},
 		},
