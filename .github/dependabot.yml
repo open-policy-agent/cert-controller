@@ -1,6 +1,19 @@
 version: 2
 updates:
-  - package-ecosystem: gomod
+  - package-ecosystem: "gomod"
     directory: /
     schedule:
-      interval: daily
+      interval: "daily"
+    commit-message:
+      prefix: "chore"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+        - "version-update:semver-major"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    commit-message:
+      prefix: "chore"
