@@ -488,7 +488,7 @@ func resetWebhook(ctx context.Context, g *gomega.WithT, c client.Client, wh inte
 
 		webhooks := extractWebhooks(g, whu, webhooksField)
 		for _, w := range webhooks {
-			if err = unstructured.SetNestedField(w.(map[string]interface{}), nil, caBundleField...); err != nil {
+			if err = unstructured.SetNestedField(w.(map[string]interface{}), "", caBundleField...); err != nil {
 				return err
 			}
 		}
