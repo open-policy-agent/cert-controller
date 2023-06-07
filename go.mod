@@ -3,7 +3,7 @@ module github.com/open-policy-agent/cert-controller
 go 1.20
 
 require (
-	github.com/onsi/gomega v1.27.7
+	github.com/onsi/gomega v1.27.8
 	github.com/open-policy-agent/frameworks/constraint v0.0.0-20230411224310-3f237e2710fa
 	github.com/pkg/errors v0.9.1
 	go.uber.org/atomic v1.11.0
