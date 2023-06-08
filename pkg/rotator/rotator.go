@@ -50,22 +50,24 @@ var crLog = logf.Log.WithName("cert-rotation")
 type WebhookType int
 
 const (
-	//ValidatingWebhook indicates the webhook is a ValidatingWebhook
+	// ValidatingWebhook indicates the webhook is a ValidatingWebhook
 	Validating WebhookType = iota
-	//MutingWebhook indicates the webhook is a MutatingWebhook
+	// MutingWebhook indicates the webhook is a MutatingWebhook
 	Mutating
-	//CRDConversionWebhook indicates the webhook is a conversion webhook
+	// CRDConversionWebhook indicates the webhook is a conversion webhook
 	CRDConversion
-	//APIServiceWebhook indicates the webhook is an extension API server
+	// APIServiceWebhook indicates the webhook is an extension API server
 	APIService
-	//ExternalDataProvider indicates the webhook is a Gatekeeper External Data Provider
+	// ExternalDataProvider indicates the webhook is a Gatekeeper External Data Provider
 	ExternalDataProvider
 )
 
-var _ manager.Runnable = &CertRotator{}
-var _ manager.LeaderElectionRunnable = &CertRotator{}
-var _ manager.Runnable = controllerWrapper{}
-var _ manager.LeaderElectionRunnable = controllerWrapper{}
+var (
+	_ manager.Runnable               = &CertRotator{}
+	_ manager.LeaderElectionRunnable = &CertRotator{}
+	_ manager.Runnable               = controllerWrapper{}
+	_ manager.LeaderElectionRunnable = controllerWrapper{}
+)
 
 type controllerWrapper struct {
 	controller.Controller
@@ -78,7 +80,7 @@ func (cw controllerWrapper) NeedLeaderElection() bool {
 
 // WebhookInfo is used by the rotator to receive info about resources to be updated with certificates
 type WebhookInfo struct {
-	//Name is the name of the webhook for a validating or mutating webhook, or the CRD name in case of a CRD conversion webhook
+	// Name is the name of the webhook for a validating or mutating webhook, or the CRD name in case of a CRD conversion webhook
 	Name string
 	Type WebhookType
 }
@@ -119,14 +121,15 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 	}
 
 	reconciler := &ReconcileWH{
-		cache:              cache,
-		writer:             mgr.GetClient(), // TODO
-		scheme:             mgr.GetScheme(),
-		ctx:                context.Background(),
-		secretKey:          cr.SecretKey,
-		wasCAInjected:      cr.wasCAInjected,
-		webhooks:           cr.Webhooks,
-		needLeaderElection: cr.RequireLeaderElection,
+		cache:                       cache,
+		writer:                      mgr.GetClient(), // TODO
+		scheme:                      mgr.GetScheme(),
+		ctx:                         context.Background(),
+		secretKey:                   cr.SecretKey,
+		wasCAInjected:               cr.wasCAInjected,
+		webhooks:                    cr.Webhooks,
+		needLeaderElection:          cr.RequireLeaderElection,
+		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
 	}
 	if err := addController(mgr, reconciler); err != nil {
 		return err
@@ -659,14 +662,15 @@ var _ reconcile.Reconciler = &ReconcileWH{}
 // ReconcileWH reconciles a validatingwebhookconfiguration, making sure it
 // has the appropriate CA cert
 type ReconcileWH struct {
-	writer             client.Writer
-	cache              cache.Cache
-	scheme             *runtime.Scheme
-	ctx                context.Context
-	secretKey          types.NamespacedName
-	webhooks           []WebhookInfo
-	wasCAInjected      *atomic.Bool
-	needLeaderElection bool
+	writer                      client.Writer
+	cache                       cache.Cache
+	scheme                      *runtime.Scheme
+	ctx                         context.Context
+	secretKey                   types.NamespacedName
+	webhooks                    []WebhookInfo
+	wasCAInjected               *atomic.Bool
+	needLeaderElection          bool
+	refreshCertIfNeededDelegate func() error
 }
 
 // Reconcile reads that state of the cluster for a validatingwebhookconfiguration
@@ -692,6 +696,12 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 	}
 
 	if secret.GetDeletionTimestamp().IsZero() {
+		if r.refreshCertIfNeededDelegate != nil {
+			if err := r.refreshCertIfNeededDelegate(); err != nil {
+				crLog.Error(err, "error rotating certs on secret reconcile")
+			}
+		}
+
 		artifacts, err := buildArtifactsFromSecret(secret)
 		if err != nil {
 			crLog.Error(err, "secret is not well-formed, cannot update webhook configurations")
