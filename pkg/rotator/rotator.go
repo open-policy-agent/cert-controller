@@ -116,7 +116,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 	cr.certsNotMounted = make(chan struct{})
 	cr.wasCAInjected = atomic.NewBool(false)
 	cr.caNotInjected = make(chan struct{})
-	if !cr.TestNoBackgroundRotation {
+	if !cr.testNoBackgroundRotation {
 		if err := mgr.Add(cr); err != nil {
 			return err
 		}
@@ -187,14 +187,14 @@ type CertRotator struct {
 	// be run in the leader election mode.
 	RequireLeaderElection bool
 
-	// TestNoBackgroundRotation doesn't actually add the .Start as a runnable.
-	// This should only be used for testing.
-	TestNoBackgroundRotation bool
-
 	certsMounted    chan struct{}
 	certsNotMounted chan struct{}
 	wasCAInjected   *atomic.Bool
 	caNotInjected   chan struct{}
+
+	// testNoBackgroundRotation doesn't actually add the starts the rotator.
+	// This should only be used for testing.
+	testNoBackgroundRotation bool
 }
 
 func (cr *CertRotator) NeedLeaderElection() bool {

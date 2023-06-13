@@ -399,7 +399,7 @@ func TestReconcileWebhook(t *testing.T) {
 						Type: tt.webhookType,
 					},
 				},
-				TestNoBackgroundRotation: true,
+				testNoBackgroundRotation: true,
 				ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
