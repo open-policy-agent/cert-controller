@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// StartTestManager adds recFn
+// StartTestManager adds recFn.
 func StartTestManager(ctx context.Context, mgr manager.Manager, g *gomega.GomegaWithT) *sync.WaitGroup {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)

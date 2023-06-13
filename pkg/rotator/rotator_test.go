@@ -37,7 +37,7 @@ var (
 			x509.ExtKeyUsageServerAuth,
 		},
 	}
-	//certValidityDuration = 10 * 365 * 24 * time.Hour
+	// certValidityDuration = 10 * 365 * 24 * time.Hour.
 	begin = time.Now().Add(-1 * time.Hour)
 	end   = time.Now().Add(certValidityDuration)
 )
@@ -345,19 +345,23 @@ func TestReconcileWebhook(t *testing.T) {
 	}
 
 	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			var (
-				nsName     = fmt.Sprintf("test-reconcile-%s", tt.name)
-				secretName = "test-secret"
-				whName     = fmt.Sprintf("test-webhook-%s", tt.name)
-			)
+		var (
+			secretName = "test-secret"
+			whName     = fmt.Sprintf("test-webhook-%s", tt.name)
+		)
+
+		// this test relies on the rotator to generate/ rotate the CA
+		t.Run(fmt.Sprintf("%s-rotator", tt.name), func(t *testing.T) {
+			nsName := fmt.Sprintf("test-reconcile-%s-1", tt.name)
+			key := types.NamespacedName{Namespace: nsName, Name: secretName}
 
 			// CRDConversion and APIService require special name format
 			if tt.webhookConfig.GetName() != "" {
 				whName = tt.webhookConfig.GetName()
+			} else {
+				whName = whName + "-1"
 			}
 
-			key := types.NamespacedName{Namespace: nsName, Name: secretName}
 			rotator := &CertRotator{
 				SecretKey: key,
 				Webhooks: []WebhookInfo{
@@ -367,8 +371,41 @@ func TestReconcileWebhook(t *testing.T) {
 					},
 				},
 			}
+			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
+			if !ok {
+				t.Fatalf("could not deep copy wh object")
+			}
+			wh.SetName(whName)
 
-			wh := tt.webhookConfig
+			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField)
+		})
+
+		// this test does not start the rotator as a runnable instead it tests that
+		// the webhook reconciler can call on the rotator to refresh/ generate certs as needed.
+		t.Run(fmt.Sprintf("%s-without-background-rotation", tt.name), func(t *testing.T) {
+			if tt.webhookConfig.GetName() != "" {
+				t.Skip("skipping for CRDConversion and APIService")
+			}
+
+			nsName := fmt.Sprintf("test-reconcile-%s-2", tt.name)
+			key := types.NamespacedName{Namespace: nsName, Name: secretName}
+			whName = whName + "-2"
+
+			rotator := &CertRotator{
+				SecretKey: key,
+				Webhooks: []WebhookInfo{
+					{
+						Name: whName,
+						Type: tt.webhookType,
+					},
+				},
+				TestNoBackgroundRotation: true,
+				ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			}
+			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
+			if !ok {
+				t.Fatalf("could not deep copy wh object")
+			}
 			wh.SetName(whName)
 
 			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField)
