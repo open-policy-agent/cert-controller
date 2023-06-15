@@ -405,6 +405,7 @@ func TestReconcileWebhook(t *testing.T) {
 					},
 				},
 				testNoBackgroundRotation: true,
+				caCertDuration:           defaultCertValidityDuration,
 				ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
