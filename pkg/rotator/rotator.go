@@ -192,7 +192,7 @@ type CertRotator struct {
 	wasCAInjected   *atomic.Bool
 	caNotInjected   chan struct{}
 
-	// testNoBackgroundRotation doesn't actually add the starts the rotator.
+	// testNoBackgroundRotation doesn't actually start the rotator in the background.
 	// This should only be used for testing.
 	testNoBackgroundRotation bool
 	// caCertDuration sets how long a CA cert will be valid for.
@@ -715,7 +715,7 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 			rotatedCA, err := r.refreshCertIfNeededDelegate()
 			if err != nil {
 				crLog.Error(err, "error rotating certs on secret reconcile")
-				return reconcile.Result{}, nil
+				return reconcile.Result{}, err
 			}
 
 			// if we did rotate the CA, the secret is stale so let's return
