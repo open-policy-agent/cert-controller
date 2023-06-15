@@ -35,13 +35,13 @@ import (
 )
 
 const (
-	certName               = "tls.crt"
-	keyName                = "tls.key"
-	caCertName             = "ca.crt"
-	caKeyName              = "ca.key"
-	rotationCheckFrequency = 12 * time.Hour
-	certValidityDuration   = 10 * 365 * 24 * time.Hour
-	lookaheadInterval      = 90 * 24 * time.Hour
+	certName                    = "tls.crt"
+	keyName                     = "tls.key"
+	caCertName                  = "ca.crt"
+	caKeyName                   = "ca.key"
+	rotationCheckFrequency      = 12 * time.Hour
+	defaultCertValidityDuration = 10 * 365 * 24 * time.Hour
+	lookaheadInterval           = 90 * 24 * time.Hour
 )
 
 var crLog = logf.Log.WithName("cert-rotation")
@@ -195,6 +195,8 @@ type CertRotator struct {
 	// testNoBackgroundRotation doesn't actually add the starts the rotator.
 	// This should only be used for testing.
 	testNoBackgroundRotation bool
+	// caCertDuration sets how long a CA cert will be valid for.
+	caCertDuration time.Duration
 }
 
 func (cr *CertRotator) NeedLeaderElection() bool {
@@ -212,6 +214,9 @@ func (cr *CertRotator) Start(ctx context.Context) error {
 
 	if cr.ExtKeyUsages == nil {
 		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+	if cr.caCertDuration == time.Duration(0) {
+		cr.caCertDuration = defaultCertValidityDuration
 	}
 
 	// explicitly rotate on the first round so that the certificate
@@ -305,7 +310,7 @@ func (cr *CertRotator) refreshCerts(refreshCA bool, secret *corev1.Secret) error
 	var caArtifacts *KeyPairArtifacts
 	now := time.Now()
 	begin := now.Add(-1 * time.Hour)
-	end := now.Add(certValidityDuration)
+	end := now.Add(cr.caCertDuration)
 	if refreshCA {
 		var err error
 		caArtifacts, err = cr.CreateCACert(begin, end)
