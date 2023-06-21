@@ -720,7 +720,7 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 
 			// if we did rotate the CA, the secret is stale so let's return
 			if rotatedCA {
-				return reconcile.Result{Requeue: true}, nil
+				return reconcile.Result{}, nil
 			}
 		}
 
