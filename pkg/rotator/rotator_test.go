@@ -42,7 +42,7 @@ var (
 			x509.ExtKeyUsageServerAuth,
 		},
 	}
-	// certValidityDuration = 10 * 365 * 24 * time.Hour.
+
 	begin          = time.Now().Add(-1 * time.Hour)
 	end            = time.Now().Add(defaultCertValidityDuration)
 	sideEffectNone = admissionv1.SideEffectClassNone
