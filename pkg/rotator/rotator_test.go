@@ -494,7 +494,7 @@ func TestWebhookCARotation(t *testing.T) {
 			t.Fatal("error while getting secret; should not error", err)
 		}
 
-		// check that the two secrets are no the same
+		// check that the two secrets are not the same
 		if reflect.DeepEqual(secret1.Data, secret2.Data) {
 			return false
 		}
@@ -504,7 +504,7 @@ func TestWebhookCARotation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// sanity check tha the two KPAs are different too:
+		// sanity check that the two KPAs are different too:
 		if reflect.DeepEqual(kpa1, kpa2) {
 			return false
 		}
