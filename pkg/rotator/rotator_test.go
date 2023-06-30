@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -22,7 +23,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
-const ValidCABundle = "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIwekNDQVgyZ0F3SUJBZ0lKQUkvTTdCWWp3Qit1TUEwR0NTcUdTSWIzRFFFQkJRVUFNRVV4Q3pBSkJnTlYKQkFZVEFrRlZNUk13RVFZRFZRUUlEQXBUYjIxbExWTjBZWFJsTVNFd0h3WURWUVFLREJoSmJuUmxjbTVsZENCWAphV1JuYVhSeklGQjBlU0JNZEdRd0hoY05NVEl3T1RFeU1qRTFNakF5V2hjTk1UVXdPVEV5TWpFMU1qQXlXakJGCk1Rc3dDUVlEVlFRR0V3SkJWVEVUTUJFR0ExVUVDQXdLVTI5dFpTMVRkR0YwWlRFaE1COEdBMVVFQ2d3WVNXNTAKWlhKdVpYUWdWMmxrWjJsMGN5QlFkSGtnVEhSa01Gd3dEUVlKS29aSWh2Y05BUUVCQlFBRFN3QXdTQUpCQU5MSgpoUEhoSVRxUWJQa2xHM2liQ1Z4d0dNUmZwL3Y0WHFoZmRRSGRjVmZIYXA2TlE1V29rLzR4SUErdWkzNS9NbU5hCnJ0TnVDK0JkWjF0TXVWQ1BGWmNDQXdFQUFhTlFNRTR3SFFZRFZSME9CQllFRkp2S3M4UmZKYVhUSDA4VytTR3YKelF5S24wSDhNQjhHQTFVZEl3UVlNQmFBRkp2S3M4UmZKYVhUSDA4VytTR3Z6UXlLbjBIOE1Bd0dBMVVkRXdRRgpNQU1CQWY4d0RRWUpLb1pJaHZjTkFRRUZCUUFEUVFCSmxmZkpIeWJqREd4Uk1xYVJtRGhYMCs2djAyVFVLWnNXCnI1UXVWYnBRaEg2dSswVWdjVzBqcDlRd3B4b1BUTFRXR1hFV0JCQnVyeEZ3aUNCaGtRK1YKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
+const (
+	ValidCABundle       = "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUIwekNDQVgyZ0F3SUJBZ0lKQUkvTTdCWWp3Qit1TUEwR0NTcUdTSWIzRFFFQkJRVUFNRVV4Q3pBSkJnTlYKQkFZVEFrRlZNUk13RVFZRFZRUUlEQXBUYjIxbExWTjBZWFJsTVNFd0h3WURWUVFLREJoSmJuUmxjbTVsZENCWAphV1JuYVhSeklGQjBlU0JNZEdRd0hoY05NVEl3T1RFeU1qRTFNakF5V2hjTk1UVXdPVEV5TWpFMU1qQXlXakJGCk1Rc3dDUVlEVlFRR0V3SkJWVEVUTUJFR0ExVUVDQXdLVTI5dFpTMVRkR0YwWlRFaE1COEdBMVVFQ2d3WVNXNTAKWlhKdVpYUWdWMmxrWjJsMGN5QlFkSGtnVEhSa01Gd3dEUVlKS29aSWh2Y05BUUVCQlFBRFN3QXdTQUpCQU5MSgpoUEhoSVRxUWJQa2xHM2liQ1Z4d0dNUmZwL3Y0WHFoZmRRSGRjVmZIYXA2TlE1V29rLzR4SUErdWkzNS9NbU5hCnJ0TnVDK0JkWjF0TXVWQ1BGWmNDQXdFQUFhTlFNRTR3SFFZRFZSME9CQllFRkp2S3M4UmZKYVhUSDA4VytTR3YKelF5S24wSDhNQjhHQTFVZEl3UVlNQmFBRkp2S3M4UmZKYVhUSDA4VytTR3Z6UXlLbjBIOE1Bd0dBMVVkRXdRRgpNQU1CQWY4d0RRWUpLb1pJaHZjTkFRRUZCUUFEUVFCSmxmZkpIeWJqREd4Uk1xYVJtRGhYMCs2djAyVFVLWnNXCnI1UXVWYnBRaEg2dSswVWdjVzBqcDlRd3B4b1BUTFRXR1hFV0JCQnVyeEZ3aUNCaGtRK1YKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
+	gEventuallyTimeout  = 15 * time.Second
+	gEventuallyInterval = 50 * time.Millisecond
+)
 
 var (
 	cr = &CertRotator{
@@ -37,9 +42,10 @@ var (
 			x509.ExtKeyUsageServerAuth,
 		},
 	}
-	//certValidityDuration = 10 * 365 * 24 * time.Hour
-	begin = time.Now().Add(-1 * time.Hour)
-	end   = time.Now().Add(certValidityDuration)
+
+	begin          = time.Now().Add(-1 * time.Hour)
+	end            = time.Now().Add(defaultCertValidityDuration)
+	sideEffectNone = admissionv1.SideEffectClassNone
 )
 
 func TestCertSigning(t *testing.T) {
@@ -242,7 +248,6 @@ func testWebhook(t *testing.T, secretKey types.NamespacedName, rotator *CertRota
 }
 
 func TestReconcileWebhook(t *testing.T) {
-	sideEffectNone := admissionv1.SideEffectClassNone
 	testCases := []struct {
 		name          string
 		webhookType   WebhookType
@@ -345,19 +350,23 @@ func TestReconcileWebhook(t *testing.T) {
 	}
 
 	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			var (
-				nsName     = fmt.Sprintf("test-reconcile-%s", tt.name)
-				secretName = "test-secret"
-				whName     = fmt.Sprintf("test-webhook-%s", tt.name)
-			)
+		var (
+			secretName = "test-secret"
+			whName     = fmt.Sprintf("test-webhook-%s", tt.name)
+		)
+
+		// this test relies on the rotator to generate/ rotate the CA
+		t.Run(fmt.Sprintf("%s-rotator", tt.name), func(t *testing.T) {
+			nsName := fmt.Sprintf("test-reconcile-%s-1", tt.name)
+			key := types.NamespacedName{Namespace: nsName, Name: secretName}
 
 			// CRDConversion and APIService require special name format
 			if tt.webhookConfig.GetName() != "" {
 				whName = tt.webhookConfig.GetName()
+			} else {
+				whName = whName + "-1"
 			}
 
-			key := types.NamespacedName{Namespace: nsName, Name: secretName}
 			rotator := &CertRotator{
 				SecretKey: key,
 				Webhooks: []WebhookInfo{
@@ -367,13 +376,141 @@ func TestReconcileWebhook(t *testing.T) {
 					},
 				},
 			}
+			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
+			if !ok {
+				t.Fatalf("could not deep copy wh object")
+			}
+			wh.SetName(whName)
 
-			wh := tt.webhookConfig
+			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField)
+		})
+
+		// this test does not start the rotator as a runnable instead it tests that
+		// the webhook reconciler can call on the rotator to refresh/ generate certs as needed.
+		t.Run(fmt.Sprintf("%s-without-background-rotation", tt.name), func(t *testing.T) {
+			if tt.webhookConfig.GetName() != "" {
+				t.Skip("skipping for CRDConversion and APIService")
+			}
+
+			nsName := fmt.Sprintf("test-reconcile-%s-2", tt.name)
+			key := types.NamespacedName{Namespace: nsName, Name: secretName}
+			whName = whName + "-2"
+
+			rotator := &CertRotator{
+				SecretKey: key,
+				Webhooks: []WebhookInfo{
+					{
+						Name: whName,
+						Type: tt.webhookType,
+					},
+				},
+				testNoBackgroundRotation: true,
+				caCertDuration:           defaultCertValidityDuration,
+				ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			}
+			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
+			if !ok {
+				t.Fatalf("could not deep copy wh object")
+			}
 			wh.SetName(whName)
 
 			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField)
 		})
 	}
+}
+
+// TestWebhookCARotation makes sure that a webhook will be able to regenerate/ rotate the CA.
+func TestWebhookCARotation(t *testing.T) {
+	whName := "test-webhook-validating"
+	key := types.NamespacedName{Namespace: "test-reconcile-cert-wh-rotation", Name: "test-secret"}
+	rotator := &CertRotator{
+		SecretKey: key,
+		Webhooks: []WebhookInfo{
+			{
+				Name: whName,
+				Type: Validating,
+			},
+		},
+		testNoBackgroundRotation: true,
+		caCertDuration:           time.Duration(time.Second * 2),
+		ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+
+	wh := &admissionv1.ValidatingWebhookConfiguration{
+		Webhooks: []admissionv1.ValidatingWebhook{
+			{
+				Name:        "testpolicy.kubernetes.io",
+				SideEffects: &sideEffectNone,
+				ClientConfig: admissionv1.WebhookClientConfig{
+					URL: strPtr("https://localhost/webhook"),
+				},
+				AdmissionReviewVersions: []string{"v1", "v1beta1"},
+			},
+		},
+	}
+	wh.SetName(whName)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	g := gomega.NewWithT(t)
+	mgr := setupManager(g)
+	c := mgr.GetClient()
+
+	err := AddRotator(mgr, rotator)
+	g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
+
+	createSecret(ctx, g, c, rotator.SecretKey)
+
+	err = c.Create(ctx, wh)
+	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating webhookConfig")
+	_ = StartTestManager(ctx, mgr, g)
+
+	// Wait for certificates to generated
+	ensureCertWasGenerated(ctx, g, c, rotator.SecretKey)
+
+	// get cert from ca bundle
+	var secret1 corev1.Secret
+	if err := c.Get(ctx, rotator.SecretKey, &secret1); err != nil {
+		t.Fatal("error while getting secret; should not error", err)
+	}
+	kpa1, err := buildArtifactsFromSecret(&secret1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// trigger a reconcile event and see the CA get expired and rotated
+	if secret1.Annotations == nil {
+		secret1.Annotations = make(map[string]string)
+	}
+	secret1.Annotations["test-annon"] = time.Now().GoString()
+	if err := c.Update(ctx, &secret1); err != nil {
+		t.Fatal("error while updating secret to reconcile; should not error", err)
+	}
+
+	g.Eventually(func() bool {
+		var secret2 corev1.Secret
+		if err := c.Get(ctx, rotator.SecretKey, &secret2); err != nil {
+			t.Fatal("error while getting secret; should not error", err)
+		}
+
+		// check that the two secrets are not the same
+		if reflect.DeepEqual(secret1.Data, secret2.Data) {
+			return false
+		}
+
+		kpa2, err := buildArtifactsFromSecret(&secret2)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// sanity check that the two KPAs are different too:
+		if reflect.DeepEqual(kpa1, kpa2) {
+			return false
+		}
+
+		return true
+	}, gEventuallyTimeout, gEventuallyInterval).Should(gomega.BeTrue(), "waiting for webhook reconciliation to rotate a short lived CA")
 }
 
 // Verifies that the rotator cache only reads from a single namespace.
@@ -423,8 +560,6 @@ func TestNamespacedCache(t *testing.T) {
 }
 
 func ensureCertWasGenerated(ctx context.Context, g *gomega.WithT, c client.Reader, key types.NamespacedName) {
-	const timeout = 15 * time.Second
-	const interval = 50 * time.Millisecond
 	var secret corev1.Secret
 	g.Eventually(func() bool {
 		if err := c.Get(ctx, key, &secret); err != nil {
@@ -432,7 +567,7 @@ func ensureCertWasGenerated(ctx context.Context, g *gomega.WithT, c client.Reade
 		}
 
 		return len(secret.Data) > 0
-	}, timeout, interval).Should(gomega.BeTrue(), "waiting for certificate generation")
+	}, gEventuallyTimeout, gEventuallyInterval).Should(gomega.BeTrue(), "waiting for certificate generation")
 }
 
 func extractWebhooks(g *gomega.WithT, u *unstructured.Unstructured, webhooksField []string) []interface{} {
@@ -449,9 +584,6 @@ func extractWebhooks(g *gomega.WithT, u *unstructured.Unstructured, webhooksFiel
 }
 
 func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}, webhooksField, caBundleField []string) {
-	const timeout = 15 * time.Second
-	const interval = 50 * time.Millisecond
-
 	// convert to unstructured object to accept either ValidatingWebhookConfiguration or MutatingWebhookConfiguration
 	whu := &unstructured.Unstructured{}
 	err := c.Scheme().Convert(wh, whu, nil)
@@ -471,7 +603,7 @@ func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Clien
 			}
 		}
 		return true
-	}, timeout, interval).Should(gomega.BeTrue(), "waiting for webhook reconciliation")
+	}, gEventuallyTimeout, gEventuallyInterval).Should(gomega.BeTrue(), "waiting for webhook reconciliation")
 }
 
 func resetWebhook(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}, webhooksField, caBundleField []string) {
