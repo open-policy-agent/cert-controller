@@ -160,7 +160,7 @@ func TestSecretRoundTrip(t *testing.T) {
 	}
 
 	secret := &corev1.Secret{}
-	populateSecret(cert, key, caArtifacts, secret)
+	populateSecret(cert, key, cr.CertName, cr.KeyName, caArtifacts, secret)
 	art2, err := buildArtifactsFromSecret(secret)
 	if err != nil {
 		t.Fatal(err)
@@ -405,7 +405,7 @@ func TestReconcileWebhook(t *testing.T) {
 					},
 				},
 				testNoBackgroundRotation: true,
-				caCertDuration:           defaultCertValidityDuration,
+				CaCertDuration:           defaultCertValidityDuration,
 				ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
@@ -432,7 +432,7 @@ func TestWebhookCARotation(t *testing.T) {
 			},
 		},
 		testNoBackgroundRotation: true,
-		caCertDuration:           time.Duration(time.Second * 2),
+		CaCertDuration:           time.Duration(time.Second * 2),
 		ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
