@@ -43,6 +43,7 @@ const (
 	defaultCaCertValidityDuration     = 10 * 365 * 24 * time.Hour
 	defaultServerCertValidityDuration = 1 * 365 * 24 * time.Hour
 	defaultLookaheadInterval          = 90 * 24 * time.Hour
+        rotateCA                    	  = true
 )
 
 var crLog = logf.Log.WithName("cert-rotation")
@@ -223,6 +224,9 @@ type CertRotator struct {
 	CertName string
 	KeyName  string
 
+	// RotateCA sets if CA should be rotated
+	RotateCA *bool
+
 	certsMounted    chan struct{}
 	certsNotMounted chan struct{}
 	wasCAInjected   *atomic.Bool
@@ -248,6 +252,15 @@ func (cr *CertRotator) Start(ctx context.Context) error {
 
 	if cr.ExtKeyUsages == nil {
 		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+
+	if cr.CaCertDuration == time.Duration(0) {
+		cr.CaCertDuration = defaultCertValidityDuration
+	}
+
+	if cr.RotateCA == nil {
+		var rotateCA bool = rotateCA
+		cr.RotateCA = &rotateCA
 	}
 
 	// explicitly rotate on the first round so that the certificate
@@ -295,7 +308,12 @@ func (cr *CertRotator) refreshCertIfNeeded() (bool, error) {
 		if err := cr.reader.Get(context.Background(), cr.SecretKey, secret); err != nil {
 			return false, errors.Wrap(err, "acquiring secret to update certificates")
 		}
-		if secret.Data == nil || !cr.validCACert(secret.Data[caCertName], secret.Data[caKeyName]) {
+
+		if !*cr.RotateCA && secret.Data == nil {
+			return false, errors.New("if CA is not provided, then RotateCA should be enabled")
+		}
+
+		if secret.Data == nil || (*cr.RotateCA && !cr.validCACert(secret.Data[caCertName], secret.Data[caKeyName])) {
 			crLog.Info("refreshing CA and server certs")
 			if err := cr.refreshCerts(true, secret); err != nil {
 				crLog.Error(err, "could not refresh CA and server certs")
