@@ -213,7 +213,7 @@ func setupManager(g *gomega.GomegaWithT) manager.Manager {
 	return mgr
 }
 
-func testWebhook(t *testing.T, secretKey types.NamespacedName, rotator *CertRotator, wh client.Object, webhooksField, caBundleField []string) {
+func testWebhook(t *testing.T, secretKey types.NamespacedName, rotator *CertRotator, wh client.Object, webhooksField, caBundleField []string, fieldOwner string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
@@ -235,13 +235,13 @@ func testWebhook(t *testing.T, secretKey types.NamespacedName, rotator *CertRota
 	ensureCertWasGenerated(ctx, g, c, secretKey)
 
 	// Wait for certificates to populated in managed webhookConfigurations
-	ensureWebhookPopulated(ctx, g, c, wh, webhooksField, caBundleField)
+	ensureWebhookPopulated(ctx, g, c, wh, webhooksField, caBundleField, fieldOwner)
 
 	// Zero out the certificates, ensure they are repopulated
 	resetWebhook(ctx, g, c, wh, webhooksField, caBundleField)
 
 	// Verify certificates are regenerated
-	ensureWebhookPopulated(ctx, g, c, wh, webhooksField, caBundleField)
+	ensureWebhookPopulated(ctx, g, c, wh, webhooksField, caBundleField, fieldOwner)
 
 	cancelFunc()
 	wg.Wait()
@@ -353,6 +353,7 @@ func TestReconcileWebhook(t *testing.T) {
 		var (
 			secretName = "test-secret"
 			whName     = fmt.Sprintf("test-webhook-%s", tt.name)
+			fieldOwner = "foo"
 		)
 
 		// this test relies on the rotator to generate/ rotate the CA
@@ -375,6 +376,7 @@ func TestReconcileWebhook(t *testing.T) {
 						Type: tt.webhookType,
 					},
 				},
+				FieldOwner: fieldOwner,
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
 			if !ok {
@@ -382,7 +384,7 @@ func TestReconcileWebhook(t *testing.T) {
 			}
 			wh.SetName(whName)
 
-			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField)
+			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField, fieldOwner)
 		})
 
 		// this test does not start the rotator as a runnable instead it tests that
@@ -414,7 +416,7 @@ func TestReconcileWebhook(t *testing.T) {
 			}
 			wh.SetName(whName)
 
-			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField)
+			testWebhook(t, key, rotator, wh, tt.webhooksField, tt.caBundleField, "")
 		})
 	}
 }
@@ -583,7 +585,7 @@ func extractWebhooks(g *gomega.WithT, u *unstructured.Unstructured, webhooksFiel
 	return webhooks
 }
 
-func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}, webhooksField, caBundleField []string) {
+func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}, webhooksField, caBundleField []string, fieldOwner string) {
 	// convert to unstructured object to accept either ValidatingWebhookConfiguration or MutatingWebhookConfiguration
 	whu := &unstructured.Unstructured{}
 	err := c.Scheme().Convert(wh, whu, nil)
@@ -592,6 +594,10 @@ func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Clien
 	key := client.ObjectKeyFromObject(whu)
 	g.Eventually(func() bool {
 		if err := c.Get(ctx, key, whu); err != nil {
+			return false
+		}
+
+		if !checkFieldOwner(whu.Object, fieldOwner) {
 			return false
 		}
 
@@ -604,6 +610,26 @@ func ensureWebhookPopulated(ctx context.Context, g *gomega.WithT, c client.Clien
 		}
 		return true
 	}, gEventuallyTimeout, gEventuallyInterval).Should(gomega.BeTrue(), "waiting for webhook reconciliation")
+}
+
+func checkFieldOwner(w map[string]interface{}, fieldOwner string) bool {
+	if fieldOwner == "" {
+		return true
+	}
+	managedFields, found, err := unstructured.NestedSlice(w, "metadata", "managedFields")
+	if !found || err != nil {
+		return false
+	}
+	for _, m := range managedFields {
+		manager, found, err := unstructured.NestedString(m.(map[string]interface{}), "manager")
+		if !found || err != nil {
+			continue
+		}
+		if manager == fieldOwner {
+			return true
+		}
+	}
+	return false
 }
 
 func resetWebhook(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}, webhooksField, caBundleField []string) {
