@@ -132,6 +132,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		webhooks:                    cr.Webhooks,
 		needLeaderElection:          cr.RequireLeaderElection,
 		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
+		fieldOwner:                  cr.FieldOwner,
 	}
 	if err := addController(mgr, reconciler); err != nil {
 		return err
@@ -173,14 +174,16 @@ type CertRotator struct {
 	reader SyncingReader
 	writer client.Writer
 
-	SecretKey              types.NamespacedName
-	CertDir                string
-	CAName                 string
-	CAOrganization         string
-	DNSName                string
-	ExtraDNSNames          []string
-	IsReady                chan struct{}
-	Webhooks               []WebhookInfo
+	SecretKey      types.NamespacedName
+	CertDir        string
+	CAName         string
+	CAOrganization string
+	DNSName        string
+	ExtraDNSNames  []string
+	IsReady        chan struct{}
+	Webhooks       []WebhookInfo
+	// FieldOwner is the optional fieldmanager of the webhook updated fields.
+	FieldOwner             string
 	RestartOnSecretRefresh bool
 	ExtKeyUsages           *[]x509.ExtKeyUsage
 	// RequireLeaderElection should be set to true if the CertRotator needs to
@@ -686,6 +689,7 @@ type ReconcileWH struct {
 	wasCAInjected               *atomic.Bool
 	needLeaderElection          bool
 	refreshCertIfNeededDelegate func() (bool, error)
+	fieldOwner                  string
 }
 
 // Reconcile reads that state of the cluster for a validatingwebhookconfiguration
@@ -780,7 +784,11 @@ func (r *ReconcileWH) ensureCerts(certPem []byte) error {
 			anyError = err
 			continue
 		}
-		if err := r.writer.Update(r.ctx, updatedResource); err != nil {
+		opts := []client.UpdateOption{}
+		if r.fieldOwner != "" {
+			opts = append(opts, client.FieldOwner(r.fieldOwner))
+		}
+		if err := r.writer.Update(r.ctx, updatedResource, opts...); err != nil {
 			log.Error(err, "Error updating webhook with certificate")
 			anyError = err
 			continue
