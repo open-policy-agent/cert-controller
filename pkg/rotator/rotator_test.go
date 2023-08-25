@@ -21,6 +21,7 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 const (
@@ -205,8 +206,10 @@ func setupManager(g *gomega.GomegaWithT) manager.Manager {
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
 
 	opts := manager.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: disabledMetrics,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: disabledMetrics,
+		},
 	}
 	mgr, err := manager.New(cfg, opts)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating manager")
