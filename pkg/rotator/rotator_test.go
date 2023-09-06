@@ -21,6 +21,7 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 const (
@@ -44,7 +45,7 @@ var (
 	}
 
 	begin          = time.Now().Add(-1 * time.Hour)
-	end            = time.Now().Add(defaultCertValidityDuration)
+	end            = time.Now().Add(defaultCaCertValidityDuration)
 	sideEffectNone = admissionv1.SideEffectClassNone
 )
 
@@ -63,7 +64,7 @@ func TestCertSigning(t *testing.T) {
 		t.Error("Generated cert is not valid for common name")
 	}
 
-	valid, err := ValidCert(caArtifacts.CertPEM, cert, key, cr.ExtraDNSNames[0], cr.ExtKeyUsages, lookaheadTime())
+	valid, err := ValidCert(caArtifacts.CertPEM, cert, key, cr.ExtraDNSNames[0], cr.ExtKeyUsages, cr.lookaheadTime())
 	if err != nil || !valid {
 		t.Error("Generated cert is not valid for ExtraDnsName")
 	}
@@ -160,7 +161,7 @@ func TestSecretRoundTrip(t *testing.T) {
 	}
 
 	secret := &corev1.Secret{}
-	populateSecret(cert, key, caArtifacts, secret)
+	populateSecret(cert, key, cr.CertName, cr.KeyName, caArtifacts, secret)
 	art2, err := buildArtifactsFromSecret(secret)
 	if err != nil {
 		t.Fatal(err)
@@ -205,8 +206,10 @@ func setupManager(g *gomega.GomegaWithT) manager.Manager {
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "building runtime schema")
 
 	opts := manager.Options{
-		Scheme:             scheme,
-		MetricsBindAddress: disabledMetrics,
+		Scheme: scheme,
+		Metrics: server.Options{
+			BindAddress: disabledMetrics,
+		},
 	}
 	mgr, err := manager.New(cfg, opts)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "creating manager")
@@ -405,7 +408,7 @@ func TestReconcileWebhook(t *testing.T) {
 					},
 				},
 				testNoBackgroundRotation: true,
-				caCertDuration:           defaultCertValidityDuration,
+				CaCertDuration:           defaultCaCertValidityDuration,
 				ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
@@ -432,7 +435,7 @@ func TestWebhookCARotation(t *testing.T) {
 			},
 		},
 		testNoBackgroundRotation: true,
-		caCertDuration:           time.Duration(time.Second * 2),
+		CaCertDuration:           time.Duration(time.Second * 2),
 		ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
