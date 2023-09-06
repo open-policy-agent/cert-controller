@@ -45,7 +45,7 @@ var (
 	}
 
 	begin          = time.Now().Add(-1 * time.Hour)
-	end            = time.Now().Add(defaultCertValidityDuration)
+	end            = time.Now().Add(defaultCaCertValidityDuration)
 	sideEffectNone = admissionv1.SideEffectClassNone
 )
 
@@ -64,7 +64,7 @@ func TestCertSigning(t *testing.T) {
 		t.Error("Generated cert is not valid for common name")
 	}
 
-	valid, err := ValidCert(caArtifacts.CertPEM, cert, key, cr.ExtraDNSNames[0], cr.ExtKeyUsages, lookaheadTime())
+	valid, err := ValidCert(caArtifacts.CertPEM, cert, key, cr.ExtraDNSNames[0], cr.ExtKeyUsages, cr.lookaheadTime())
 	if err != nil || !valid {
 		t.Error("Generated cert is not valid for ExtraDnsName")
 	}
@@ -161,7 +161,7 @@ func TestSecretRoundTrip(t *testing.T) {
 	}
 
 	secret := &corev1.Secret{}
-	populateSecret(cert, key, caArtifacts, secret)
+	populateSecret(cert, key, cr.CertName, cr.KeyName, caArtifacts, secret)
 	art2, err := buildArtifactsFromSecret(secret)
 	if err != nil {
 		t.Fatal(err)
@@ -408,7 +408,7 @@ func TestReconcileWebhook(t *testing.T) {
 					},
 				},
 				testNoBackgroundRotation: true,
-				caCertDuration:           defaultCertValidityDuration,
+				CaCertDuration:           defaultCaCertValidityDuration,
 				ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
@@ -435,7 +435,7 @@ func TestWebhookCARotation(t *testing.T) {
 			},
 		},
 		testNoBackgroundRotation: true,
-		caCertDuration:           time.Duration(time.Second * 2),
+		CaCertDuration:           time.Duration(time.Second * 2),
 		ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
