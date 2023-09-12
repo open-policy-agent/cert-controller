@@ -147,6 +147,10 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		cr.RotationCheckFrequency = defaultLookaheadInterval
 	}
 
+	if cr.ExtKeyUsages == nil {
+		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+
 	reconciler := &ReconcileWH{
 		cache:                       cache,
 		writer:                      mgr.GetClient(), // TODO
@@ -249,10 +253,6 @@ func (cr *CertRotator) Start(ctx context.Context) error {
 	}
 	if !cr.reader.WaitForCacheSync(ctx) {
 		return errors.New("failed waiting for reader to sync")
-	}
-
-	if cr.ExtKeyUsages == nil {
-		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	}
 
 	// explicitly rotate on the first round so that the certificate
