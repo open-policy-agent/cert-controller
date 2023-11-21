@@ -335,6 +335,24 @@ func TestReconcileWebhook(t *testing.T) {
 			},
 		},
 		{
+			"apiservice-insecure-tls", APIService, nil, []string{"spec", "caBundle"}, &apiregistrationv1.APIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "v1alpha2.example.com",
+				},
+				Spec: apiregistrationv1.APIServiceSpec{
+					Group:                 "example.com",
+					GroupPriorityMinimum:  1,
+					Version:               "v1alpha2",
+					VersionPriority:       1,
+					InsecureSkipTLSVerify: true,
+					Service: &apiregistrationv1.ServiceReference{
+						Namespace: "kube-system",
+						Name:      "example-api",
+					},
+				},
+			},
+		},
+		{
 			"externaldataprovider", ExternalDataProvider, nil, []string{"spec", "caBundle"}, &externaldatav1beta1.Provider{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "externaldata.gatekeeper.sh/v1beta1",

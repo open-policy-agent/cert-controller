@@ -437,6 +437,9 @@ func injectCertToApiService(apiService *unstructured.Unstructured, certPem []byt
 	if !found {
 		return errors.New("`spec` field not found in APIService")
 	}
+	if err := unstructured.SetNestedField(apiService.Object, false, "spec", "insecureSkipTLSVerify"); err != nil {
+		return err
+	}
 	if err := unstructured.SetNestedField(apiService.Object, base64.StdEncoding.EncodeToString(certPem), "spec", "caBundle"); err != nil {
 		return err
 	}
