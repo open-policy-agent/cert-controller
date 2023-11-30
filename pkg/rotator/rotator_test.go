@@ -335,6 +335,10 @@ func TestReconcileWebhook(t *testing.T) {
 			},
 		},
 		{
+			// As InsecureSkipTLSVerify: true isn't compatible with caBundle
+			// we cover that the process sets InsecureSkipTLSVerify: false.
+			// If there is any issue patching InsecureSkipTLSVerify the test fails
+			// due InsecureSkipTLSVerify & caBundle incompatibility
 			"apiservice-insecure-tls", APIService, nil, []string{"spec", "caBundle"}, &apiregistrationv1.APIService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "v1alpha2.example.com",
