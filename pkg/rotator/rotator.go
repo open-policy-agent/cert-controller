@@ -173,6 +173,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		needLeaderElection:          cr.RequireLeaderElection,
 		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
 		fieldOwner:                  cr.FieldOwner,
+		removeInsecureSkipTLSVerify: cr.RemoveInsecureSkipTLSVerify,
 	}
 	if err := addController(mgr, reconciler); err != nil {
 		return err
@@ -247,6 +248,9 @@ type CertRotator struct {
 	// CertName and Keyname override certificate path
 	CertName string
 	KeyName  string
+	// RemoveInsecureSkipTLSVerify sets if InsecureSkipTLSVerify has to
+	// be removed from apiservices during the patch process
+	RemoveInsecureSkipTLSVerify bool
 
 	certsMounted    chan struct{}
 	certsNotMounted chan struct{}
@@ -387,7 +391,7 @@ func (cr *CertRotator) refreshCerts(refreshCA bool, secret *corev1.Secret) error
 	return nil
 }
 
-func injectCert(updatedResource *unstructured.Unstructured, certPem []byte, webhookType WebhookType) error {
+func injectCert(updatedResource *unstructured.Unstructured, certPem []byte, webhookType WebhookType, removeInsecureSkipTLSVerify bool) error {
 	switch webhookType {
 	case Validating:
 		return injectCertToWebhook(updatedResource, certPem)
@@ -396,7 +400,7 @@ func injectCert(updatedResource *unstructured.Unstructured, certPem []byte, webh
 	case CRDConversion:
 		return injectCertToConversionWebhook(updatedResource, certPem)
 	case APIService:
-		return injectCertToApiService(updatedResource, certPem)
+		return injectCertToApiService(updatedResource, certPem, removeInsecureSkipTLSVerify)
 	case ExternalDataProvider:
 		return injectCertToExternalDataProvider(updatedResource, certPem)
 	}
@@ -442,7 +446,7 @@ func injectCertToConversionWebhook(crd *unstructured.Unstructured, certPem []byt
 	return nil
 }
 
-func injectCertToApiService(apiService *unstructured.Unstructured, certPem []byte) error {
+func injectCertToApiService(apiService *unstructured.Unstructured, certPem []byte, removeInsecureSkipTLSVerify bool) error {
 	_, found, err := unstructured.NestedMap(apiService.Object, "spec")
 	if err != nil {
 		return err
@@ -450,8 +454,10 @@ func injectCertToApiService(apiService *unstructured.Unstructured, certPem []byt
 	if !found {
 		return errors.New("`spec` field not found in APIService")
 	}
-	if err := unstructured.SetNestedField(apiService.Object, false, "spec", "insecureSkipTLSVerify"); err != nil {
-		return err
+	if removeInsecureSkipTLSVerify {
+		if err := unstructured.SetNestedField(apiService.Object, false, "spec", "insecureSkipTLSVerify"); err != nil {
+			return err
+		}
 	}
 	if err := unstructured.SetNestedField(apiService.Object, base64.StdEncoding.EncodeToString(certPem), "spec", "caBundle"); err != nil {
 		return err
@@ -736,6 +742,7 @@ type ReconcileWH struct {
 	ctx                         context.Context
 	secretKey                   types.NamespacedName
 	webhooks                    []WebhookInfo
+	removeInsecureSkipTLSVerify bool
 	wasCAInjected               *atomic.Bool
 	needLeaderElection          bool
 	refreshCertIfNeededDelegate func() (bool, error)
@@ -829,7 +836,7 @@ func (r *ReconcileWH) ensureCerts(certPem []byte) error {
 		}
 
 		log.Info("Ensuring CA cert", "name", webhook.Name, "gvk", gvk)
-		if err := injectCert(updatedResource, certPem, webhook.Type); err != nil {
+		if err := injectCert(updatedResource, certPem, webhook.Type, r.removeInsecureSkipTLSVerify); err != nil {
 			log.Error(err, "Unable to inject cert to webhook.")
 			anyError = err
 			continue

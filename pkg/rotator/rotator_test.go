@@ -401,7 +401,8 @@ func TestReconcileWebhook(t *testing.T) {
 						Type: tt.webhookType,
 					},
 				},
-				FieldOwner: fieldOwner,
+				FieldOwner:                  fieldOwner,
+				RemoveInsecureSkipTLSVerify: true,
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
 			if !ok {
