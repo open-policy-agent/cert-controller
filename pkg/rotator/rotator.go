@@ -51,13 +51,13 @@ var crLog = logf.Log.WithName("cert-rotation")
 type WebhookType int
 
 const (
-	// ValidatingWebhook indicates the webhook is a ValidatingWebhook.
+	// Validating indicates the webhook is a ValidatingWebhook.
 	Validating WebhookType = iota
-	// MutingWebhook indicates the webhook is a MutatingWebhook.
+	// Mutating indicates the webhook is a MutatingWebhook.
 	Mutating
-	// CRDConversionWebhook indicates the webhook is a conversion webhook.
+	// CRDConversion indicates the webhook is a conversion webhook.
 	CRDConversion
-	// APIServiceWebhook indicates the webhook is an extension API server.
+	// APIService indicates the webhook is an extension API server.
 	APIService
 	// ExternalDataProvider indicates the webhook is a Gatekeeper External Data Provider.
 	ExternalDataProvider
@@ -68,6 +68,8 @@ var (
 	_ manager.LeaderElectionRunnable = &CertRotator{}
 	_ manager.Runnable               = controllerWrapper{}
 	_ manager.LeaderElectionRunnable = controllerWrapper{}
+	_ manager.Runnable               = &cacheWrapper{}
+	_ manager.LeaderElectionRunnable = &cacheWrapper{}
 )
 
 type controllerWrapper struct {
@@ -76,6 +78,15 @@ type controllerWrapper struct {
 }
 
 func (cw controllerWrapper) NeedLeaderElection() bool {
+	return cw.needLeaderElection
+}
+
+type cacheWrapper struct {
+	cache.Cache
+	needLeaderElection bool
+}
+
+func (cw *cacheWrapper) NeedLeaderElection() bool {
 	return cw.needLeaderElection
 }
 
@@ -106,7 +117,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 	if ns == "" {
 		return fmt.Errorf("invalid namespace for secret")
 	}
-	cache, err := addNamespacedCache(mgr, ns)
+	cache, err := addNamespacedCache(mgr, cr, ns)
 	if err != nil {
 		return fmt.Errorf("creating namespaced cache: %w", err)
 	}
@@ -147,6 +158,10 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		cr.RotationCheckFrequency = defaultLookaheadInterval
 	}
 
+	if cr.ExtKeyUsages == nil {
+		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+
 	reconciler := &ReconcileWH{
 		cache:                       cache,
 		writer:                      mgr.GetClient(), // TODO
@@ -157,6 +172,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		webhooks:                    cr.Webhooks,
 		needLeaderElection:          cr.RequireLeaderElection,
 		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
+		fieldOwner:                  cr.FieldOwner,
 	}
 	if err := addController(mgr, reconciler); err != nil {
 		return err
@@ -169,7 +185,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 // but will still have cluster-wide visibility into cluster-scoped resources.
 // The cache will be started by the manager when it starts, and consumers should synchronize on
 // it using WaitForCacheSync().
-func addNamespacedCache(mgr manager.Manager, namespace string) (cache.Cache, error) {
+func addNamespacedCache(mgr manager.Manager, cr *CertRotator, namespace string) (cache.Cache, error) {
 	var namespaces map[string]cache.Config
 	if namespace != "" {
 		namespaces = map[string]cache.Config{
@@ -186,13 +202,15 @@ func addNamespacedCache(mgr manager.Manager, namespace string) (cache.Cache, err
 	if err != nil {
 		return nil, err
 	}
-	if err := mgr.Add(c); err != nil {
+	// Wrapping the cache to make sure it's also started when the manager
+	// hasn't been leader elected and CertRotator.RequireLeaderElection is false.
+	if err := mgr.Add(&cacheWrapper{Cache: c, needLeaderElection: cr.RequireLeaderElection}); err != nil {
 		return nil, fmt.Errorf("registering namespaced cache: %w", err)
 	}
 	return c, nil
 }
 
-// SyncingSource is a reader that needs syncing prior to being usable.
+// SyncingReader is a reader that needs syncing prior to being usable.
 type SyncingReader interface {
 	client.Reader
 	WaitForCacheSync(ctx context.Context) bool
@@ -203,14 +221,16 @@ type CertRotator struct {
 	reader SyncingReader
 	writer client.Writer
 
-	SecretKey              types.NamespacedName
-	CertDir                string
-	CAName                 string
-	CAOrganization         string
-	DNSName                string
-	ExtraDNSNames          []string
-	IsReady                chan struct{}
-	Webhooks               []WebhookInfo
+	SecretKey      types.NamespacedName
+	CertDir        string
+	CAName         string
+	CAOrganization string
+	DNSName        string
+	ExtraDNSNames  []string
+	IsReady        chan struct{}
+	Webhooks       []WebhookInfo
+	// FieldOwner is the optional fieldmanager of the webhook updated fields.
+	FieldOwner             string
 	RestartOnSecretRefresh bool
 	ExtKeyUsages           *[]x509.ExtKeyUsage
 	// RequireLeaderElection should be set to true if the CertRotator needs to
@@ -249,10 +269,6 @@ func (cr *CertRotator) Start(ctx context.Context) error {
 	}
 	if !cr.reader.WaitForCacheSync(ctx) {
 		return errors.New("failed waiting for reader to sync")
-	}
-
-	if cr.ExtKeyUsages == nil {
-		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	}
 
 	// explicitly rotate on the first round so that the certificate
@@ -682,9 +698,6 @@ func addController(mgr manager.Manager, r *ReconcileWH) error {
 	if err != nil {
 		return err
 	}
-	if err := mgr.Add(controllerWrapper{c, r.needLeaderElection}); err != nil {
-		return err
-	}
 
 	err = c.Watch(
 		source.Kind(r.cache, &corev1.Secret{}),
@@ -706,7 +719,7 @@ func addController(mgr manager.Manager, r *ReconcileWH) error {
 		}
 	}
 
-	return nil
+	return mgr.Add(controllerWrapper{c, r.needLeaderElection})
 }
 
 var _ reconcile.Reconciler = &ReconcileWH{}
@@ -723,6 +736,7 @@ type ReconcileWH struct {
 	wasCAInjected               *atomic.Bool
 	needLeaderElection          bool
 	refreshCertIfNeededDelegate func() (bool, error)
+	fieldOwner                  string
 }
 
 // Reconcile reads that state of the cluster for a validatingwebhookconfiguration
@@ -817,7 +831,11 @@ func (r *ReconcileWH) ensureCerts(certPem []byte) error {
 			anyError = err
 			continue
 		}
-		if err := r.writer.Update(r.ctx, updatedResource); err != nil {
+		opts := []client.UpdateOption{}
+		if r.fieldOwner != "" {
+			opts = append(opts, client.FieldOwner(r.fieldOwner))
+		}
+		if err := r.writer.Update(r.ctx, updatedResource, opts...); err != nil {
 			log.Error(err, "Error updating webhook with certificate")
 			anyError = err
 			continue

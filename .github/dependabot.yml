@@ -10,6 +10,11 @@ updates:
       - dependency-name: "*"
         update-types:
         - "version-update:semver-major"
+    groups:
+      k8s:
+        patterns:
+        - "k8s.io/*"
+        - "sigs.k8s.io/*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
