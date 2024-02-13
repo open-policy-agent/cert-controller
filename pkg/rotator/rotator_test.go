@@ -335,6 +335,28 @@ func TestReconcileWebhook(t *testing.T) {
 			},
 		},
 		{
+			// As InsecureSkipTLSVerify: true isn't compatible with caBundle
+			// we cover that the process sets InsecureSkipTLSVerify: false.
+			// If there is any issue patching InsecureSkipTLSVerify the test fails
+			// due InsecureSkipTLSVerify & caBundle incompatibility
+			"apiservice-insecure-tls", APIService, nil, []string{"spec", "caBundle"}, &apiregistrationv1.APIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "v1alpha2.example.com",
+				},
+				Spec: apiregistrationv1.APIServiceSpec{
+					Group:                 "example.com",
+					GroupPriorityMinimum:  1,
+					Version:               "v1alpha2",
+					VersionPriority:       1,
+					InsecureSkipTLSVerify: true,
+					Service: &apiregistrationv1.ServiceReference{
+						Namespace: "kube-system",
+						Name:      "example-api",
+					},
+				},
+			},
+		},
+		{
 			"externaldataprovider", ExternalDataProvider, nil, []string{"spec", "caBundle"}, &externaldatav1beta1.Provider{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "externaldata.gatekeeper.sh/v1beta1",
@@ -379,7 +401,8 @@ func TestReconcileWebhook(t *testing.T) {
 						Type: tt.webhookType,
 					},
 				},
-				FieldOwner: fieldOwner,
+				FieldOwner:                  fieldOwner,
+				RemoveInsecureSkipTLSVerify: true,
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
 			if !ok {
