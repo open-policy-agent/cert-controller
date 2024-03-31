@@ -587,6 +587,174 @@ func TestNamespacedCache(t *testing.T) {
 	wg.Wait()
 }
 
+// Verifies that the rotator doesn't remove InsecureSkipTLSVerify when it's not flagged
+func TestRemoveInsecureSkipTLSVerify(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		apiservice                  apiregistrationv1.APIService
+		removeInsecureSkipTLSVerify bool
+		expectedResult              bool
+	}{
+		{
+			name: "remove-enabled-and-insecure-active",
+			apiservice: apiregistrationv1.APIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "v1alpha1.verify.com",
+				},
+				Spec: apiregistrationv1.APIServiceSpec{
+					Group:                 "verify.com",
+					GroupPriorityMinimum:  1,
+					Version:               "v1alpha1",
+					VersionPriority:       1,
+					InsecureSkipTLSVerify: true,
+					Service: &apiregistrationv1.ServiceReference{
+						Namespace: "kube-system",
+						Name:      "example-api",
+					},
+				},
+			},
+			removeInsecureSkipTLSVerify: true,
+			expectedResult:              true,
+		},
+		{
+			name: "remove-disabled-and-insecure-active",
+			apiservice: apiregistrationv1.APIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "v1alpha2.verify.com",
+				},
+				Spec: apiregistrationv1.APIServiceSpec{
+					Group:                 "verify.com",
+					GroupPriorityMinimum:  1,
+					Version:               "v1alpha2",
+					VersionPriority:       1,
+					InsecureSkipTLSVerify: true,
+					Service: &apiregistrationv1.ServiceReference{
+						Namespace: "kube-system",
+						Name:      "example-api",
+					},
+				},
+			},
+			removeInsecureSkipTLSVerify: false,
+			expectedResult:              false,
+		},
+		{
+			name: "remove-disabled-and-insecure-inactive",
+			apiservice: apiregistrationv1.APIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "v1alpha3.verify.com",
+				},
+				Spec: apiregistrationv1.APIServiceSpec{
+					Group:                 "verify.com",
+					GroupPriorityMinimum:  1,
+					Version:               "v1alpha3",
+					VersionPriority:       1,
+					InsecureSkipTLSVerify: false,
+					Service: &apiregistrationv1.ServiceReference{
+						Namespace: "kube-system",
+						Name:      "example-api",
+					},
+				},
+			},
+			removeInsecureSkipTLSVerify: false,
+			expectedResult:              true,
+		},
+		{
+			name: "remove-enabled-and-insecure-inactive",
+			apiservice: apiregistrationv1.APIService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "v1alpha4.verify.com",
+				},
+				Spec: apiregistrationv1.APIServiceSpec{
+					Group:                 "verify.com",
+					GroupPriorityMinimum:  1,
+					Version:               "v1alpha4",
+					VersionPriority:       1,
+					InsecureSkipTLSVerify: false,
+					Service: &apiregistrationv1.ServiceReference{
+						Namespace: "kube-system",
+						Name:      "example-api",
+					},
+				},
+			},
+			removeInsecureSkipTLSVerify: true,
+			expectedResult:              true,
+		},
+	}
+
+	for _, tt := range testCases {
+		ctx, cancelFunc := context.WithCancel(context.Background())
+		defer cancelFunc()
+		g := gomega.NewWithT(t)
+		mgr := setupManager(g)
+		c := mgr.GetClient()
+		key := types.NamespacedName{Namespace: tt.name, Name: "cert"}
+		createSecret(ctx, g, c, key)
+
+		rotator := &CertRotator{
+			SecretKey:                   key,
+			RemoveInsecureSkipTLSVerify: tt.removeInsecureSkipTLSVerify,
+			FieldOwner:                  "test",
+			Webhooks: []WebhookInfo{
+				{
+					Name: tt.apiservice.Name,
+					Type: APIService,
+				},
+			},
+		}
+		err := AddRotator(mgr, rotator)
+		g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
+
+		wg := StartTestManager(ctx, mgr, g)
+
+		// The reader (cache) will be initialized in AddRotator.
+		g.Expect(rotator.reader).ToNot(gomega.BeNil())
+
+		// Wait for it to populate
+		if !rotator.reader.WaitForCacheSync(ctx) {
+			t.Fatal("waiting for cache to populate")
+		}
+
+		// Wait for certificates to generated
+		ensureCertWasGenerated(ctx, g, c, key)
+
+		wh := &tt.apiservice
+		err = c.Create(ctx, wh)
+		g.Expect(err).NotTo(gomega.HaveOccurred(), "creating apiservice")
+
+		// Sleep 1 seconds to ensure the operation
+		time.Sleep(1 * time.Second)
+
+		whu := &unstructured.Unstructured{}
+		err = c.Scheme().Convert(wh, whu, nil)
+		g.Expect(err).NotTo(gomega.HaveOccurred(), "cannot convert to webhook to unstructured")
+
+		key = client.ObjectKeyFromObject(whu)
+
+		if err := c.Get(ctx, key, whu); err != nil {
+			t.Fatal("recovering wh")
+		}
+
+		webhooks := extractWebhooks(g, whu, nil)
+		for _, w := range webhooks {
+			_, found, err := unstructured.NestedFieldNoCopy(w.(map[string]interface{}), []string{"spec", "caBundle"}...)
+			if err != nil {
+				t.Fatal("error checking the caBundle status")
+			}
+
+			if found && !tt.expectedResult {
+				t.Fatal("caBundle has been found but not found is the expected result")
+			}
+			if !found && tt.expectedResult {
+				t.Fatal("caBundle hasn¡t been found but found is the expected result")
+			}
+		}
+
+		cancelFunc()
+		wg.Wait()
+	}
+
+}
+
 func ensureCertWasGenerated(ctx context.Context, g *gomega.WithT, c client.Reader, key types.NamespacedName) {
 	var secret corev1.Secret
 	g.Eventually(func() bool {

@@ -788,7 +788,7 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 		artifacts, err := buildArtifactsFromSecret(secret)
 		if err != nil {
 			crLog.Error(err, "secret is not well-formed, cannot update webhook configurations")
-			return reconcile.Result{}, nil
+			return reconcile.Result{}, err
 		}
 
 		// Ensure certs on webhooks
