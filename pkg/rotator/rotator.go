@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -193,12 +194,28 @@ func addNamespacedCache(mgr manager.Manager, cr *CertRotator, namespace string) 
 		}
 	}
 
-	c, err := cache.New(mgr.GetConfig(),
-		cache.Options{
-			Scheme:            mgr.GetScheme(),
-			Mapper:            mgr.GetRESTMapper(),
-			DefaultNamespaces: namespaces,
-		})
+	ObjectFilers := make(map[client.Object]cache.ByObject)
+
+	for _, webhook := range cr.Webhooks {
+		wh := &unstructured.Unstructured{}
+		wh.SetGroupVersionKind(webhook.gvk())
+		ObjectFilers[wh] = cache.ByObject{
+			Field: fields.SelectorFromSet(fields.Set{"metadata.name": webhook.Name}),
+		}
+	}
+
+	ObjectFilers[&corev1.Secret{}] = cache.ByObject{
+		Namespaces: namespaces,
+		Field:      fields.SelectorFromSet(fields.Set{"metadata.name": cr.SecretKey.Name}),
+	}
+
+	c, err := cache.New(mgr.GetConfig(), cache.Options{
+		ByObject: ObjectFilers,
+		Scheme:   mgr.GetScheme(),
+		Mapper:   mgr.GetRESTMapper(),
+	},
+	)
+
 	if err != nil {
 		return nil, err
 	}
