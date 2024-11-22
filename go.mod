@@ -7,12 +7,12 @@ require (
 	github.com/open-policy-agent/frameworks/constraint v0.0.0-20241101234656-e78c8abd754a
 	github.com/pkg/errors v0.9.1
 	go.uber.org/atomic v1.11.0
-	k8s.io/api v0.31.2
-	k8s.io/apiextensions-apiserver v0.31.2
-	k8s.io/apimachinery v0.31.2
-	k8s.io/client-go v0.31.2
-	k8s.io/kube-aggregator v0.31.2
-	sigs.k8s.io/controller-runtime v0.19.1
+	k8s.io/api v0.31.3
+	k8s.io/apiextensions-apiserver v0.31.3
+	k8s.io/apimachinery v0.31.3
+	k8s.io/client-go v0.31.3
+	k8s.io/kube-aggregator v0.31.3
+	sigs.k8s.io/controller-runtime v0.19.2
 )
 
 require (
