@@ -158,7 +158,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 	}
 
 	if cr.RotationCheckFrequency == time.Duration(0) {
-		cr.RotationCheckFrequency = defaultLookaheadInterval
+		cr.RotationCheckFrequency = defaultRotationCheckFrequency
 	}
 
 	if cr.ExtKeyUsages == nil {
