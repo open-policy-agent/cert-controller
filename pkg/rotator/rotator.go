@@ -176,6 +176,8 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		needLeaderElection:          cr.RequireLeaderElection,
 		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
 		fieldOwner:                  cr.FieldOwner,
+		certsMounted:                cr.certsMounted,
+		enableReadinessCheck:        cr.EnableReadinessCheck,
 	}
 	if err := addController(mgr, reconciler, cr.controllerName); err != nil {
 		return err
@@ -250,6 +252,10 @@ type CertRotator struct {
 	// CertName and Keyname override certificate path
 	CertName string
 	KeyName  string
+
+	// EnableReadinessCheck if true, reconcilation loop will wait for controller-runtime's
+	// runnable to finish execution.
+	EnableReadinessCheck bool
 
 	certsMounted    chan struct{}
 	certsNotMounted chan struct{}
@@ -743,6 +749,8 @@ type ReconcileWH struct {
 	needLeaderElection          bool
 	refreshCertIfNeededDelegate func() (bool, error)
 	fieldOwner                  string
+	certsMounted                chan struct{}
+	enableReadinessCheck        bool
 }
 
 // Reconcile reads that state of the cluster for a validatingwebhookconfiguration
@@ -750,6 +758,10 @@ type ReconcileWH struct {
 func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	if request.NamespacedName != r.secretKey {
 		return reconcile.Result{}, nil
+	}
+
+	if r.enableReadinessCheck {
+		<-r.certsMounted
 	}
 
 	if !r.cache.WaitForCacheSync(ctx) {
