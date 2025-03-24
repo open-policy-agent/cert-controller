@@ -761,7 +761,13 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 	}
 
 	if r.enableReadinessCheck {
-		<-r.certsMounted
+ select {
+    case <-r.certsMounted:
+        // Continue with reconciliation
+    case <-r.certsNotMounted:
+        // Requeue with backoff strategy
+        return reconcile.Result{Requeue: true, RequeueAfter: 5 * time.Second}, errors.New("certs not mounted, retrying reconciliation")
+    }
 	}
 
 	if !r.cache.WaitForCacheSync(ctx) {
