@@ -177,6 +177,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
 		fieldOwner:                  cr.FieldOwner,
 		certsMounted:                cr.certsMounted,
+		certsNotMounted:             cr.certsNotMounted,
 		enableReadinessCheck:        cr.EnableReadinessCheck,
 	}
 	if err := addController(mgr, reconciler, cr.controllerName); err != nil {
@@ -750,6 +751,7 @@ type ReconcileWH struct {
 	refreshCertIfNeededDelegate func() (bool, error)
 	fieldOwner                  string
 	certsMounted                chan struct{}
+	certsNotMounted             chan struct{}
 	enableReadinessCheck        bool
 }
 
@@ -760,8 +762,17 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 		return reconcile.Result{}, nil
 	}
 
-	if r.enableReadinessCheck && !r.areCertsMounted(ctx) {
-		return reconcile.Result{Requeue: true}, errors.New("certs not mounted, retrying reconciliation")
+	if r.enableReadinessCheck {
+		select {
+		case <-r.certsMounted:
+			// Continue with reconciliation
+		case <-ctx.Done():
+			// controller-runtime will requeue with backoff strategy when this error is returned
+			return reconcile.Result{}, fmt.Errorf("context done, retrying reconciliation: %w", ctx.Err())
+		case <-r.certsNotMounted:
+			// controller-runtime will requeue with backoff strategy when this error is returned
+			return reconcile.Result{}, errors.New("certs not mounted, retrying reconciliation")
+		}
 	}
 
 	if !r.cache.WaitForCacheSync(ctx) {
@@ -809,27 +820,6 @@ func (r *ReconcileWH) Reconcile(ctx context.Context, request reconcile.Request) 
 	}
 
 	return reconcile.Result{}, nil
-}
-
-func (r *ReconcileWH) areCertsMounted(ctx context.Context) bool {
-	readinessCtx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
-
-	t := time.NewTimer(time.Millisecond * 100)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-r.certsMounted:
-			return true
-		case <-readinessCtx.Done():
-			return false
-		case <-ctx.Done():
-			return false
-		case <-t.C:
-			// Continue with readiness check
-		}
-	}
 }
 
 // ensureCerts returns an arbitrary error if multiple errors are encountered,
