@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
@@ -637,6 +638,157 @@ func checkFieldOwner(w map[string]interface{}, fieldOwner string) bool {
 		}
 	}
 	return false
+}
+
+// TestReconcilerSync makes sure that reconciler will handle synchronization correctly.
+func TestReconcilerSync(t *testing.T) {
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "certs-mounted",
+		},
+		{
+			name: "certs-not-mounted",
+		},
+		{
+			name: "context-done",
+		},
+	}
+
+	g := gomega.NewWithT(t)
+
+	for _, tt := range testCases {
+		if tt.name == "certs-mounted" {
+			t.Run(fmt.Sprintf("reconciliation when %s", tt.name), func(t *testing.T) {
+				whName := "test-webhook-validating-" + tt.name
+				key := types.NamespacedName{Namespace: "test-reconcile-cert-wh-rotation-" + tt.name, Name: "test-secret"}
+				rotator := &CertRotator{
+					SecretKey: key,
+					Webhooks: []WebhookInfo{
+						{
+							Name: whName,
+							Type: Validating,
+						},
+					},
+					testNoBackgroundRotation: true,
+					CaCertDuration:           time.Duration(time.Second * 2),
+					ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+					controllerName:           t.Name(),
+				}
+
+				wh := &admissionv1.ValidatingWebhookConfiguration{
+					Webhooks: []admissionv1.ValidatingWebhook{
+						{
+							Name:        "testpolicy.kubernetes.io",
+							SideEffects: &sideEffectNone,
+							ClientConfig: admissionv1.WebhookClientConfig{
+								URL: strPtr("https://localhost/webhook"),
+							},
+							AdmissionReviewVersions: []string{"v1", "v1beta1"},
+						},
+					},
+				}
+				wh.SetName(whName)
+
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				g := gomega.NewWithT(t)
+				mgr := setupManager(g)
+				c := mgr.GetClient()
+
+				err := AddRotator(mgr, rotator)
+				g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
+
+				close(rotator.certsMounted)
+
+				createSecret(ctx, g, c, rotator.SecretKey)
+
+				err = c.Create(ctx, wh)
+				g.Expect(err).NotTo(gomega.HaveOccurred(), "creating webhookConfig")
+				_ = StartTestManager(ctx, mgr, g)
+
+				// Wait for certificates to generated
+				ensureCertWasGenerated(ctx, g, c, rotator.SecretKey)
+
+				// get cert from ca bundle
+				var secret1 corev1.Secret
+				if err := c.Get(ctx, rotator.SecretKey, &secret1); err != nil {
+					t.Fatal("error while getting secret; should not error", err)
+				}
+				kpa1, err := buildArtifactsFromSecret(&secret1)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				// trigger a reconcile event and see the CA get expired and rotated
+				if secret1.Annotations == nil {
+					secret1.Annotations = make(map[string]string)
+				}
+				secret1.Annotations["test-annon"] = time.Now().GoString()
+				if err := c.Update(ctx, &secret1); err != nil {
+					t.Fatal("error while updating secret to reconcile; should not error", err)
+				}
+
+				g.Eventually(func() bool {
+					var secret2 corev1.Secret
+					if err := c.Get(ctx, rotator.SecretKey, &secret2); err != nil {
+						t.Fatal("error while getting secret; should not error", err)
+					}
+
+					// check that the two secrets are not the same
+					if reflect.DeepEqual(secret1.Data, secret2.Data) {
+						return false
+					}
+
+					kpa2, err := buildArtifactsFromSecret(&secret2)
+					if err != nil {
+						t.Fatal(err)
+					}
+
+					// sanity check that the two KPAs are different too:
+					if reflect.DeepEqual(kpa1, kpa2) {
+						return false
+					}
+
+					return true
+				}, gEventuallyTimeout, gEventuallyInterval).Should(gomega.BeTrue(), "waiting for webhook reconciliation to rotate a short lived CA")
+			})
+		} else {
+			t.Run(fmt.Sprintf("reconciliation when %s", tt.name), func(t *testing.T) {
+				r := ReconcileWH{
+					certsMounted:         make(chan struct{}),
+					certsNotMounted:      make(chan struct{}),
+					enableReadinessCheck: true,
+				}
+
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				var err error
+				exitChan := make(chan struct{})
+
+				go func() {
+					_, err = r.Reconcile(ctx, reconcile.Request{})
+					close(exitChan)
+				}()
+
+				switch tt.name {
+				case "certs-not-mounted":
+					close(r.certsNotMounted)
+				case "context-done":
+					cancel()
+				}
+
+				<-exitChan
+
+				g.Expect(err).To(gomega.HaveOccurred())
+			})
+		}
+
+	}
+
 }
 
 func resetWebhook(ctx context.Context, g *gomega.WithT, c client.Client, wh interface{}, webhooksField, caBundleField []string) {
