@@ -380,7 +380,7 @@ func TestReconcileWebhook(t *testing.T) {
 					},
 				},
 				FieldOwner:     fieldOwner,
-				controllerName: t.Name(),
+				ControllerName: t.Name(),
 			}
 			wh, ok := tt.webhookConfig.DeepCopyObject().(client.Object)
 			if !ok {
@@ -403,7 +403,7 @@ func TestReconcileWebhook(t *testing.T) {
 			whName = whName + "-2"
 
 			rotator := &CertRotator{
-				controllerName: t.Name(),
+				ControllerName: t.Name(),
 				SecretKey:      key,
 				Webhooks: []WebhookInfo{
 					{
@@ -441,7 +441,7 @@ func TestWebhookCARotation(t *testing.T) {
 		testNoBackgroundRotation: true,
 		CaCertDuration:           time.Duration(time.Second * 2),
 		ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		controllerName:           t.Name(),
+		ControllerName:           t.Name(),
 	}
 
 	wh := &admissionv1.ValidatingWebhookConfiguration{
@@ -532,7 +532,7 @@ func TestNamespacedCache(t *testing.T) {
 	key := types.NamespacedName{Namespace: "test-namespace-0", Name: "test-secret"}
 	rotator := &CertRotator{
 		SecretKey:      key,
-		controllerName: t.Name(),
+		ControllerName: t.Name(),
 	}
 	err := AddRotator(mgr, rotator)
 	g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
