@@ -134,8 +134,8 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 			return err
 		}
 	}
-	if cr.controllerName == "" {
-		cr.controllerName = defaultControllerName
+	if cr.ControllerName == "" {
+		cr.ControllerName = defaultControllerName
 	}
 	if cr.CertName == "" {
 		cr.CertName = defaultCertName
@@ -177,7 +177,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
 		fieldOwner:                  cr.FieldOwner,
 	}
-	if err := addController(mgr, reconciler, cr.controllerName); err != nil {
+	if err := addController(mgr, reconciler, cr.ControllerName); err != nil {
 		return err
 	}
 	return nil
@@ -250,6 +250,9 @@ type CertRotator struct {
 	// CertName and Keyname override certificate path
 	CertName string
 	KeyName  string
+	// ControllerName allows registering multiple cert-rotator controllers.
+	// Use the default value unless rotating multiple certificate secrets.
+	ControllerName string
 
 	certsMounted    chan struct{}
 	certsNotMounted chan struct{}
@@ -259,10 +262,6 @@ type CertRotator struct {
 	// testNoBackgroundRotation doesn't actually start the rotator in the background.
 	// This should only be used for testing.
 	testNoBackgroundRotation bool
-	// controllerName allows setting the controller name to register it multiple times
-	// fixing the new k8s check that produces 'controller with name cert-rotator already exists'
-	// This should only be used for testing.
-	controllerName string
 }
 
 func (cr *CertRotator) NeedLeaderElection() bool {
