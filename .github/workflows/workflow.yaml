@@ -13,8 +13,8 @@ permissions:
 jobs:
   lint:
     permissions:
-      contents: read  # for actions/checkout to fetch code
-      pull-requests: read  # for golangci/golangci-lint-action to fetch pull requests
+      contents: read # for actions/checkout to fetch code
+      pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
     name: "Lint"
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -24,10 +24,10 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Set up Go 1.24
+      - name: Set up Go 1.25
         uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v3.5.0
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: Check out code into the Go module directory
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -35,7 +35,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
-          version: v2.1.0
+          version: v2.7.2
           args: --timeout 5m
 
   test:
@@ -48,10 +48,10 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Set up Go 1.24
+      - name: Set up Go 1.25
         uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
-          go-version: "1.24"
+          go-version: "1.25"
         id: go
 
       - name: Check out code into the Go module directory
