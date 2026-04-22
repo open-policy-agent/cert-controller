@@ -57,28 +57,14 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Install kubebuilder
+      - name: Install envtest binaries
         run: |
-          curl -L -O "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_$(go env GOOS)_$(go env GOARCH)" && \
-          curl -L -O "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-server-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
-          curl -L -O "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-client-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
-          curl -L -O "https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
-          tar -zxvf kubernetes-server-$(go env GOOS)-$(go env GOARCH).tar.gz && \
-          tar -zxvf kubernetes-client-$(go env GOOS)-$(go env GOARCH).tar.gz && \
-          tar -zxvf etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz && \
-          chmod +x kubebuilder_$(go env GOOS)_$(go env GOARCH) && \
-          chmod +x kubernetes/server/bin/kube-apiserver && \
-          chmod +x kubernetes/client/bin/kubectl && \
-          chmod +x etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH)/etcd && \
-          sudo mkdir -p /usr/local/kubebuilder/bin && \
-          sudo mv kubebuilder_$(go env GOOS)_$(go env GOARCH) /usr/local/kubebuilder/bin/kubebuilder && \
-          sudo mv kubernetes/server/bin/kube-apiserver /usr/local/kubebuilder/bin/kube-apiserver && \
-          sudo mv kubernetes/server/bin/kubectl /usr/local/kubebuilder/bin/kubectl && \
-          sudo mv etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH)/etcd /usr/local/kubebuilder/bin/etcd
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          mkdir -p "${HOME}/kubebuilder/bin"
+          "$HOME/go/bin/setup-envtest" use "${KUBERNETES_VERSION}" --bin-dir "${HOME}/kubebuilder/bin" -p path
+          echo "KUBEBUILDER_ASSETS=${HOME}/kubebuilder/bin" >> "$GITHUB_ENV"
         env:
-          KUBEBUILDER_VERSION: 3.9.0
-          KUBERNETES_VERSION: 1.26.1
-          ETCD_VERSION: 3.5.7
+          KUBERNETES_VERSION: 1.26.x
 
       - name: Unit test
         run: make test
