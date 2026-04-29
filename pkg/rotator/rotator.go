@@ -339,8 +339,7 @@ func (cr *CertRotator) refreshCertIfNeeded() (bool, error) {
 			rotatedCA = true
 			crLog.Info("server certs refreshed")
 			if cr.RestartOnSecretRefresh {
-				crLog.Info("Secrets have been updated; exiting so pod can be restarted (This behaviour can be changed with the option RestartOnSecretRefresh)")
-				os.Exit(0)
+				crLog.Info("Secrets have been updated; RestartOnSecretRefresh is deprecated and ignored to avoid restart loops")
 			}
 			return true, nil
 		}
@@ -353,8 +352,7 @@ func (cr *CertRotator) refreshCertIfNeeded() (bool, error) {
 			}
 			crLog.Info("server certs refreshed")
 			if cr.RestartOnSecretRefresh {
-				crLog.Info("Secrets have been updated; exiting so pod can be restarted (This behaviour can be changed with the option RestartOnSecretRefresh)")
-				os.Exit(0)
+				crLog.Info("Secrets have been updated; RestartOnSecretRefresh is deprecated and ignored to avoid restart loops")
 			}
 			return true, nil
 		}
