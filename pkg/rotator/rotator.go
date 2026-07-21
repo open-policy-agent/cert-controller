@@ -173,7 +173,7 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 		secretKey:                   cr.SecretKey,
 		wasCAInjected:               cr.wasCAInjected,
 		webhooks:                    cr.Webhooks,
-		needLeaderElection:          cr.RequireLeaderElection,
+		needLeaderElection:          true,
 		refreshCertIfNeededDelegate: cr.refreshCertIfNeeded,
 		fieldOwner:                  cr.FieldOwner,
 		certsMounted:                cr.certsMounted,
@@ -208,9 +208,8 @@ func addNamespacedCache(mgr manager.Manager, cr *CertRotator, namespace string) 
 	if err != nil {
 		return nil, err
 	}
-	// Wrapping the cache to make sure it's also started when the manager
-	// hasn't been leader elected and CertRotator.RequireLeaderElection is false.
-	if err := mgr.Add(&cacheWrapper{Cache: c, needLeaderElection: cr.RequireLeaderElection}); err != nil {
+	// Wrapping the cache so the manager can gate startup on leader election.
+	if err := mgr.Add(&cacheWrapper{Cache: c, needLeaderElection: true}); err != nil {
 		return nil, fmt.Errorf("registering namespaced cache: %w", err)
 	}
 	return c, nil
@@ -239,8 +238,8 @@ type CertRotator struct {
 	FieldOwner             string
 	RestartOnSecretRefresh bool
 	ExtKeyUsages           *[]x509.ExtKeyUsage
-	// RequireLeaderElection should be set to true if the CertRotator needs to
-	// be run in the leader election mode.
+	// RequireLeaderElection is deprecated and ignored.
+	// CertRotator always requires leader election.
 	RequireLeaderElection bool
 	// CaCertDuration sets how long a CA cert will be valid for.
 	CaCertDuration time.Duration
@@ -273,7 +272,7 @@ type CertRotator struct {
 }
 
 func (cr *CertRotator) NeedLeaderElection() bool {
-	return cr.RequireLeaderElection
+	return true
 }
 
 // Start starts the CertRotator runnable to rotate certs and ensure the certs are ready.
