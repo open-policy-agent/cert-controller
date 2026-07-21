@@ -59,22 +59,53 @@ jobs:
 
       - name: Install kubebuilder
         run: |
-          curl -L -O "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_$(go env GOOS)_$(go env GOARCH)" && \
-          curl -L -O "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-server-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
-          curl -L -O "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-client-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
-          curl -L -O "https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz" && \
-          tar -zxvf kubernetes-server-$(go env GOOS)-$(go env GOARCH).tar.gz && \
-          tar -zxvf kubernetes-client-$(go env GOOS)-$(go env GOARCH).tar.gz && \
-          tar -zxvf etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz && \
-          chmod +x kubebuilder_$(go env GOOS)_$(go env GOARCH) && \
-          chmod +x kubernetes/server/bin/kube-apiserver && \
-          chmod +x kubernetes/client/bin/kubectl && \
-          chmod +x etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH)/etcd && \
-          sudo mkdir -p /usr/local/kubebuilder/bin && \
-          sudo mv kubebuilder_$(go env GOOS)_$(go env GOARCH) /usr/local/kubebuilder/bin/kubebuilder && \
-          sudo mv kubernetes/server/bin/kube-apiserver /usr/local/kubebuilder/bin/kube-apiserver && \
-          sudo mv kubernetes/server/bin/kubectl /usr/local/kubebuilder/bin/kubectl && \
-          sudo mv etcd-v${ETCD_VERSION}-$(go env GOOS)-$(go env GOARCH)/etcd /usr/local/kubebuilder/bin/etcd
+          set -euo pipefail
+
+          os="$(go env GOOS)"
+          arch="$(go env GOARCH)"
+
+          curl --fail --show-error --silent --location --remote-name \
+            "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_${os}_${arch}"
+          curl --fail --show-error --silent --location --remote-name \
+            "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/checksums.txt"
+          grep " kubebuilder_${os}_${arch}$" checksums.txt | sha256sum --check --status
+
+          curl --fail --show-error --silent --location --remote-name \
+            "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-server-${os}-${arch}.tar.gz"
+          curl --fail --show-error --silent --location --remote-name \
+            "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-server-${os}-${arch}.tar.gz.sha256"
+          sha256sum --check --status <<EOF
+$(cat kubernetes-server-${os}-${arch}.tar.gz.sha256)  kubernetes-server-${os}-${arch}.tar.gz
+EOF
+
+          curl --fail --show-error --silent --location --remote-name \
+            "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-client-${os}-${arch}.tar.gz"
+          curl --fail --show-error --silent --location --remote-name \
+            "https://dl.k8s.io/v${KUBERNETES_VERSION}/kubernetes-client-${os}-${arch}.tar.gz.sha256"
+          sha256sum --check --status <<EOF
+$(cat kubernetes-client-${os}-${arch}.tar.gz.sha256)  kubernetes-client-${os}-${arch}.tar.gz
+EOF
+
+          curl --fail --show-error --silent --location --remote-name \
+            "https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-${os}-${arch}.tar.gz"
+          curl --fail --show-error --silent --location --remote-name \
+            "https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/SHA256SUMS"
+          grep " etcd-v${ETCD_VERSION}-${os}-${arch}.tar.gz$" SHA256SUMS | sha256sum --check --status
+
+          tar -zxvf "kubernetes-server-${os}-${arch}.tar.gz"
+          tar -zxvf "kubernetes-client-${os}-${arch}.tar.gz"
+          tar -zxvf "etcd-v${ETCD_VERSION}-${os}-${arch}.tar.gz"
+
+          chmod +x "kubebuilder_${os}_${arch}"
+          chmod +x kubernetes/server/bin/kube-apiserver
+          chmod +x kubernetes/client/bin/kubectl
+          chmod +x "etcd-v${ETCD_VERSION}-${os}-${arch}/etcd"
+
+          sudo mkdir -p /usr/local/kubebuilder/bin
+          sudo mv "kubebuilder_${os}_${arch}" /usr/local/kubebuilder/bin/kubebuilder
+          sudo mv kubernetes/server/bin/kube-apiserver /usr/local/kubebuilder/bin/kube-apiserver
+          sudo mv kubernetes/server/bin/kubectl /usr/local/kubebuilder/bin/kubectl
+          sudo mv "etcd-v${ETCD_VERSION}-${os}-${arch}/etcd" /usr/local/kubebuilder/bin/etcd
         env:
           KUBEBUILDER_VERSION: 3.9.0
           KUBERNETES_VERSION: 1.26.1
