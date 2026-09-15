@@ -447,7 +447,7 @@ func injectCertToConversionWebhook(crd *unstructured.Unstructured, certPem []byt
 		return err
 	}
 	if !found {
-		return errors.New("`conversion.webhook.clientConfig` field not found in CustomResourceDefinition")
+		return nil
 	}
 	if err := unstructured.SetNestedField(crd.Object, base64.StdEncoding.EncodeToString(certPem), "spec", "conversion", "webhook", "clientConfig", "caBundle"); err != nil {
 		return err
