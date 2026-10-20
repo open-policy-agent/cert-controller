@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -204,6 +205,11 @@ func addNamespacedCache(mgr manager.Manager, cr *CertRotator, namespace string) 
 			Scheme:            mgr.GetScheme(),
 			Mapper:            mgr.GetRESTMapper(),
 			DefaultNamespaces: namespaces,
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Secret{}: {
+					Field: fields.OneTermEqualSelector("metadata.name", cr.SecretKey.Name),
+				},
+			},
 		})
 	if err != nil {
 		return nil, err
