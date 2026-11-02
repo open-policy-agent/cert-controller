@@ -118,22 +118,6 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 	if ns == "" {
 		return fmt.Errorf("invalid namespace for secret")
 	}
-	cache, err := addNamespacedCache(mgr, cr, ns)
-	if err != nil {
-		return fmt.Errorf("creating namespaced cache: %w", err)
-	}
-
-	cr.reader = cache
-	cr.writer = mgr.GetClient() // TODO make overrideable
-	cr.certsMounted = make(chan struct{})
-	cr.certsNotMounted = make(chan struct{})
-	cr.wasCAInjected = atomic.NewBool(false)
-	cr.caNotInjected = make(chan struct{})
-	if !cr.testNoBackgroundRotation {
-		if err := mgr.Add(cr); err != nil {
-			return err
-		}
-	}
 	if cr.ControllerName == "" {
 		cr.ControllerName = defaultControllerName
 	}
@@ -163,6 +147,31 @@ func AddRotator(mgr manager.Manager, cr *CertRotator) error {
 
 	if cr.ExtKeyUsages == nil {
 		cr.ExtKeyUsages = &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	}
+
+	if cr.LookaheadInterval >= cr.CaCertDuration {
+		return fmt.Errorf("LookaheadInterval (%s) must be shorter than CaCertDuration (%s)", cr.LookaheadInterval, cr.CaCertDuration)
+	}
+
+	if cr.LookaheadInterval >= cr.ServerCertDuration {
+		return fmt.Errorf("LookaheadInterval (%s) must be shorter than ServerCertDuration (%s)", cr.LookaheadInterval, cr.ServerCertDuration)
+	}
+
+	cache, err := addNamespacedCache(mgr, cr, ns)
+	if err != nil {
+		return fmt.Errorf("creating namespaced cache: %w", err)
+	}
+
+	cr.reader = cache
+	cr.writer = mgr.GetClient() // TODO make overrideable
+	cr.certsMounted = make(chan struct{})
+	cr.certsNotMounted = make(chan struct{})
+	cr.wasCAInjected = atomic.NewBool(false)
+	cr.caNotInjected = make(chan struct{})
+	if !cr.testNoBackgroundRotation {
+		if err := mgr.Add(cr); err != nil {
+			return err
+		}
 	}
 
 	reconciler := &ReconcileWH{
