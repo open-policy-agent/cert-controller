@@ -71,6 +71,28 @@ func TestCertSigning(t *testing.T) {
 	}
 }
 
+func TestInjectCertToConversionWebhookWithoutClientConfig(t *testing.T) {
+	crd := &unstructured.Unstructured{Object: map[string]interface{}{
+		"spec": map[string]interface{}{
+			"conversion": map[string]interface{}{
+				"strategy": "None",
+			},
+		},
+	}}
+
+	if err := injectCertToConversionWebhook(crd, []byte("dummy-cert")); err != nil {
+		t.Fatalf("injecting certificate should be a no-op when conversion webhook clientConfig is missing: %v", err)
+	}
+
+	_, found, err := unstructured.NestedString(crd.Object, "spec", "conversion", "webhook", "clientConfig", "caBundle")
+	if err != nil {
+		t.Fatalf("unexpected error checking conversion webhook caBundle: %v", err)
+	}
+	if found {
+		t.Fatal("caBundle should not be created when conversion webhook clientConfig is missing")
+	}
+}
+
 func TestCertExpiry(t *testing.T) {
 	caArtifacts, err := cr.CreateCACert(begin, end)
 	if err != nil {
