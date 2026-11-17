@@ -75,6 +75,12 @@ Users who set the `RestartOnSecretRefresh` field on the `CertRotator` struct wil
 restart when the cert refreshes or is initialized. This may improve mean
 time to availability of a bootstrapping webhook.
 
+Users who set the `KeepPreviousCAOnRotation` field will keep the previous CA
+certificate in `ca.crt`, after the new CA, when the CA is rotated. It is then
+part of the injected `caBundle` until it expires, so webhook replicas still
+serving a certificate signed by the previous CA are trusted until they load the
+new certificate.
+
 ## Questions?
 
 If you have questions about the project, please file a GitHub issue.

@@ -3,6 +3,7 @@ package rotator
 import (
 	"context"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"reflect"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -188,6 +190,104 @@ func TestEmptyIsInvalid(t *testing.T) {
 	}
 	if cr.validCACert([]byte{}, []byte{}) {
 		t.Fatal("empty CA cert is valid")
+	}
+}
+
+func TestKeepPreviousCAOnRotation(t *testing.T) {
+	testCases := []struct {
+		name          string
+		keepPrevious  bool
+		previousCAEnd time.Time
+		wantCerts     int
+	}{
+		{
+			name:          "previous CA is not kept by default",
+			previousCAEnd: end,
+			wantCerts:     1,
+		},
+		{
+			name:          "unexpired previous CA is kept",
+			keepPrevious:  true,
+			previousCAEnd: end,
+			wantCerts:     2,
+		},
+		{
+			name:          "expired previous CA is dropped",
+			keepPrevious:  true,
+			previousCAEnd: time.Now().Add(-1 * time.Minute),
+			wantCerts:     1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rotator := *cr
+			rotator.CertName = defaultCertName
+			rotator.KeyName = defaultKeyName
+			rotator.CaCertDuration = defaultCaCertValidityDuration
+			rotator.ServerCertDuration = defaultServerCertValidityDuration
+			rotator.LookaheadInterval = defaultLookaheadInterval
+			rotator.KeepPreviousCAOnRotation = tc.keepPrevious
+
+			previousCA, err := rotator.CreateCACert(begin.Add(-1*time.Hour), tc.previousCAEnd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previousCert, previousKey, err := rotator.CreateCertPEM(previousCA, begin.Add(-1*time.Hour), tc.previousCAEnd)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "certs"}}
+			populateSecret(previousCert, previousKey, rotator.CertName, rotator.KeyName, previousCA, secret)
+			rotator.writer = fake.NewClientBuilder().WithObjects(secret.DeepCopy()).Build()
+
+			if err := rotator.refreshCerts(true, secret); err != nil {
+				t.Fatal(err)
+			}
+			assertCABundle(t, &rotator, secret, previousCA, tc.wantCerts)
+
+			// A server certificate refresh keeps the bundle.
+			if err := rotator.refreshCerts(false, secret); err != nil {
+				t.Fatal(err)
+			}
+			assertCABundle(t, &rotator, secret, previousCA, tc.wantCerts)
+		})
+	}
+}
+
+func assertCABundle(t *testing.T, rotator *CertRotator, secret *corev1.Secret, previousCA *KeyPairArtifacts, wantCerts int) {
+	t.Helper()
+	bundle := secret.Data[caCertName]
+
+	// The first certificate must be the CA that signs the server certificate.
+	if !rotator.validCACert(bundle, secret.Data[caKeyName]) {
+		t.Fatal("CA cert is not valid")
+	}
+	if !rotator.validServerCert(bundle, secret.Data[rotator.CertName], secret.Data[rotator.KeyName]) {
+		t.Fatal("server cert is not valid")
+	}
+
+	var certs []*x509.Certificate
+	for rest := bundle; ; {
+		var b *pem.Block
+		b, rest = pem.Decode(rest)
+		if b == nil {
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		certs = append(certs, c)
+	}
+	if len(certs) != wantCerts {
+		t.Fatalf("got %d certificates in %s, want %d", len(certs), caCertName, wantCerts)
+	}
+	if certs[0].Equal(previousCA.Cert) {
+		t.Fatal("CA was not rotated")
+	}
+	if wantCerts > 1 && !certs[1].Equal(previousCA.Cert) {
+		t.Fatal("previous CA is not the second certificate")
 	}
 }
 
