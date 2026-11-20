@@ -441,6 +441,7 @@ func TestWebhookCARotation(t *testing.T) {
 		},
 		testNoBackgroundRotation: true,
 		CaCertDuration:           time.Duration(time.Second * 2),
+		LookaheadInterval:        time.Second,
 		ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		ControllerName:           t.Name(),
 	}
@@ -477,6 +478,9 @@ func TestWebhookCARotation(t *testing.T) {
 
 	// Wait for certificates to generated
 	ensureCertWasGenerated(ctx, g, c, rotator.SecretKey)
+
+	// wait for the short lived CA to enter the lookahead interval
+	time.Sleep(rotator.CaCertDuration)
 
 	// get cert from ca bundle
 	var secret1 corev1.Secret
@@ -520,6 +524,64 @@ func TestWebhookCARotation(t *testing.T) {
 
 		return true
 	}, gEventuallyTimeout, gEventuallyInterval).Should(gomega.BeTrue(), "waiting for webhook reconciliation to rotate a short lived CA")
+}
+
+func TestAddRotatorLookaheadInterval(t *testing.T) {
+	testCases := []struct {
+		name               string
+		caCertDuration     time.Duration
+		serverCertDuration time.Duration
+		lookaheadInterval  time.Duration
+		wantErr            bool
+	}{
+		{
+			name: "defaults",
+		},
+		{
+			name:               "lookahead shorter than cert durations",
+			caCertDuration:     time.Hour,
+			serverCertDuration: time.Hour,
+			lookaheadInterval:  time.Minute,
+		},
+		{
+			name:               "server cert duration shorter than default lookahead",
+			serverCertDuration: 30 * 24 * time.Hour,
+			wantErr:            true,
+		},
+		{
+			name:           "CA cert duration shorter than default lookahead",
+			caCertDuration: 30 * 24 * time.Hour,
+			wantErr:        true,
+		},
+		{
+			name:               "lookahead equal to server cert duration",
+			serverCertDuration: time.Hour,
+			lookaheadInterval:  time.Hour,
+			wantErr:            true,
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := gomega.NewWithT(t)
+			mgr := setupManager(g)
+			rotator := &CertRotator{
+				SecretKey:                types.NamespacedName{Namespace: "test-lookahead", Name: "test-secret"},
+				CaCertDuration:           tc.caCertDuration,
+				ServerCertDuration:       tc.serverCertDuration,
+				LookaheadInterval:        tc.lookaheadInterval,
+				ControllerName:           fmt.Sprintf("test-lookahead-%d", i),
+				testNoBackgroundRotation: true,
+			}
+
+			err := AddRotator(mgr, rotator)
+			if tc.wantErr {
+				g.Expect(err).To(gomega.HaveOccurred(), "adding rotator")
+			} else {
+				g.Expect(err).NotTo(gomega.HaveOccurred(), "adding rotator")
+			}
+		})
+	}
 }
 
 // Verifies that the rotator cache only reads from a single namespace.
@@ -673,6 +735,7 @@ func TestReconcilerSync(t *testing.T) {
 					},
 					testNoBackgroundRotation: true,
 					CaCertDuration:           time.Duration(time.Second * 2),
+					LookaheadInterval:        time.Second,
 					ExtKeyUsages:             &[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 					ControllerName:           t.Name(),
 				}
@@ -711,6 +774,9 @@ func TestReconcilerSync(t *testing.T) {
 
 				// Wait for certificates to generated
 				ensureCertWasGenerated(ctx, g, c, rotator.SecretKey)
+
+				// wait for the short lived CA to enter the lookahead interval
+				time.Sleep(rotator.CaCertDuration)
 
 				// get cert from ca bundle
 				var secret1 corev1.Secret
