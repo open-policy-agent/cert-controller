@@ -262,6 +262,13 @@ type CertRotator struct {
 	// Use the default value unless rotating multiple certificate secrets.
 	ControllerName string
 
+	// KeepPreviousCAOnRotation, if true, keeps the unexpired certificates of the
+	// previous ca.crt after the new CA when the CA is rotated, so they stay in the
+	// injected caBundle until they expire. This lets clients keep trusting serving
+	// certificates signed by the previous CA until every replica has loaded the new
+	// one. The signing CA is always the first certificate in ca.crt.
+	KeepPreviousCAOnRotation bool
+
 	certsMounted    chan struct{}
 	certsNotMounted chan struct{}
 	wasCAInjected   *atomic.Bool
@@ -383,11 +390,19 @@ func (cr *CertRotator) refreshCerts(refreshCA bool, secret *corev1.Secret) error
 		if err != nil {
 			return err
 		}
+		if cr.KeepPreviousCAOnRotation {
+			caArtifacts.CertPEM = append(caArtifacts.CertPEM, unexpiredCertsPEM(secret.Data[caCertName], now)...)
+		}
 	} else {
 		var err error
 		caArtifacts, err = buildArtifactsFromSecret(secret)
 		if err != nil {
 			return err
+		}
+		if cr.KeepPreviousCAOnRotation {
+			// The signing CA is valid at this point, so only previous CAs that
+			// have since expired are dropped.
+			caArtifacts.CertPEM = unexpiredCertsPEM(caArtifacts.CertPEM, now)
 		}
 	}
 	end := now.Add(cr.ServerCertDuration)
@@ -540,6 +555,27 @@ func buildArtifactsFromSecret(secret *corev1.Secret) (*KeyPairArtifacts, error) 
 		KeyPEM:  keyPem,
 		Key:     key,
 	}, nil
+}
+
+// unexpiredCertsPEM returns the PEM-encoded certificates in bundle that have not
+// expired at t, in their original order.
+func unexpiredCertsPEM(bundle []byte, t time.Time) []byte {
+	var out []byte
+	for {
+		var b *pem.Block
+		b, bundle = pem.Decode(bundle)
+		if b == nil {
+			return out
+		}
+		if b.Type != "CERTIFICATE" {
+			continue
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil || t.After(c.NotAfter) {
+			continue
+		}
+		out = append(out, pem.EncodeToMemory(b)...)
+	}
 }
 
 // CreateCACert creates the self-signed CA cert and private key that will
